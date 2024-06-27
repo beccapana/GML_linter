@@ -126,11 +126,11 @@ class GMLLinter:
                 fixed_line = f"// UNUSED: {line.strip()}"
                 self.warnings.append(f"Line {line_num + 1}: Variable '{variable_name}' declared but not used")
                 return fixed_line
-
+            
 def open_file():
     filepath = filedialog.askopenfilename(filetypes=[("GML Files", "*.gml"), ("All Files", "*.*")])
     if filepath:
-        with open(filepath, 'r') as file:
+        with open(filepath, 'r', encoding='utf-8') as file:
             code = file.read()
         linter = GMLLinter()
         errors, warnings, fixed_code = linter.lint(code)
@@ -151,7 +151,7 @@ def save_fixed_code(original_filepath, fixed_code):
     base_name = os.path.basename(original_filepath)
     new_filepath = os.path.join(dir_path, f"fixed_{base_name}")
 
-    with open(new_filepath, 'w') as file:
+    with open(new_filepath, 'w', encoding='utf-8') as file:
         file.write(fixed_code)
 
     result_text.insert(tk.END, f"\nFixed code saved to: {new_filepath}")

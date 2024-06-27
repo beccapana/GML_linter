@@ -76,8 +76,14 @@ class GMLLinter:
 def open_file():
     filepath = filedialog.askopenfilename(filetypes=[("GML Files", "*.gml"), ("All Files", "*.*")])
     if filepath:
-        with open(filepath, 'r') as file:
-            code = file.read()
+        try:
+            with open(filepath, 'r', encoding='utf-8') as file:
+                code = file.read()
+        except UnicodeDecodeError:
+            result_text.delete(1.0, tk.END)
+            result_text.insert(tk.END, "Ошибка: не удалось декодировать файл. Попробуйте другой файл или измените его кодировку на UTF-8.")
+            return
+        
         linter = GMLLinter()
         errors, warnings, fixed_code = linter.lint(code)
 
