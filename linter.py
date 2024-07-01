@@ -15,6 +15,9 @@ class GMLintApp:
         self.create_widgets()
         self.set_theme_colors()
 
+        # Установка обработчиков для изменения размеров окна
+        self.root.bind('<Configure>', self.on_window_resize)
+
     def create_widgets(self):
         self.label = tk.Label(self.root, text="Выберите папку с файлами GML:", font=("Arial", 14))
         self.label.pack(pady=20)
@@ -32,6 +35,14 @@ class GMLintApp:
         self.theme_menu.add_command(label="Светлая тема", command=self.set_light_theme)
         self.menu_bar.add_cascade(label="Тема", menu=self.theme_menu)
         self.root.config(menu=self.menu_bar)
+
+        # Добавляем кнопки свернуть, выйти из полноэкранного режима и закрыть приложение
+        self.minimize_button = tk.Button(self.root, text="Свернуть", command=self.minimize_window)
+        self.minimize_button.pack(side=tk.LEFT, padx=10)
+        self.exit_fullscreen_button = tk.Button(self.root, text="Выйти из полноэкранного режима", command=self.exit_fullscreen)
+        self.exit_fullscreen_button.pack(side=tk.LEFT, padx=10)
+        self.close_button = tk.Button(self.root, text="Закрыть приложение", command=self.close_app)
+        self.close_button.pack(side=tk.LEFT, padx=10)
 
     def set_dark_theme(self):
         self.dark_theme = True
@@ -103,8 +114,8 @@ class GMLintApp:
             lines.pop(0)
         code = '\n'.join(lines)
 
-        # Добавление точек с запятыми после определённых конструкций
-        code = re.sub(r'(\b(if|while|for|switch|with|repeat|else)\b[^{;]*\))\s*(?=\{)', r'\1;', code)
+        # Добавление точек с запятыми после определённых конструкций, исключая if/else
+        code = re.sub(r'(\b(?!if|else)\w+\b[^{;]*\))\s*(?=\{)', r'\1;', code)
 
         # Добавление точек с запятыми в конце строк, если они не заканчиваются на ;, { или }
         code_lines = code.split('\n')
@@ -118,6 +129,23 @@ class GMLintApp:
         code = re.sub(r'\n\s*\n', '\n', code)
 
         return code
+
+    def on_window_resize(self, event):
+        # Обработка изменения размеров окна
+        self.root.update_idletasks()
+
+    def minimize_window(self):
+        # Свернуть окно
+        self.root.iconify()
+
+    def exit_fullscreen(self):
+        # Выйти из полноэкранного режима
+        self.root.attributes('-fullscreen', False)
+        self.root.geometry("800x600")
+
+    def close_app(self):
+        # Закрыть приложение
+        self.root.destroy()
 
 
 if __name__ == "__main__":
