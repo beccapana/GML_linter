@@ -1,120 +1,85 @@
-import tkinter as tk
-from tkinter import filedialog
 import re
 import os
+import shutil
+import tkinter as tk
+from tkinter import filedialog, messagebox
 
-class GMLLinter:
-    def __init__(self):
-        self.errors = []
-        self.warnings = []
-        
-    def lint(self, code):
-        self.errors = []
-        self.warnings = []
-        lines = code.split('\n')
-        fixed_lines = []
-
-        for i, line in enumerate(lines):
-            line = self.fix_comma_spacing(line, i)
-            line = self.fix_brackets_spacing(line, i)
-            fixed_lines.append(line)
-            self.check_line_length(line, i)
-            self.check_indentation(line, i)
-            self.check_trailing_spaces(line, i)
-            self.check_uninitialized_variables(line, i)
-            self.check_syntax(line, i)
-        
-        return self.errors, self.warnings, "\n".join(fixed_lines)
-
-    def check_line_length(self, line, line_num):
-        if len(line) > 80:
-            self.warnings.append(f"Line {line_num + 1}: Line too long ({len(line)} characters)")
+def lint_gml_code(code):
+    # Удаление отступов в самом начале кода
+    code = code.lstrip()
     
-    def check_indentation(self, line, line_num):
-        if '\t' in line:
-            self.errors.append(f"Line {line_num + 1}: Tabs used for indentation")
-        elif re.match(r' {1,3}| {5,}', line):
-            self.errors.append(f"Line {line_num + 1}: Incorrect number of spaces used for indentation")
+    # Удаление комментариев в самом начале кода, если они на английском
+    lines = code.split('\n')
+    while lines and re.match(r'^\s*//\s*[a-zA-Z]', lines[0]):
+        lines.pop(0)
+    code = '\n'.join(lines)
     
-    def check_trailing_spaces(self, line, line_num):
-        if line.rstrip() != line:
-            self.warnings.append(f"Line {line_num + 1}: Trailing whitespace")
+    # Добавление точек с запятыми после определённых конструкций
+    code = re.sub(r'(\b(if|while|for|switch|with|repeat|else)\b[^{;]*\))\s*(?=\{)', r'\1;', code)
     
-    def check_uninitialized_variables(self, line, line_num):
-        if re.search(r'\bvar\b', line) and not re.search(r'=', line):
-            self.errors.append(f"Line {line_num + 1}: Variable declared without initialization")
-
-    def check_syntax(self, line, line_num):
-        if re.search(r'\b(if|else|for|while|switch|case|break|continue|return)\b', line):
-            if not re.search(r'\(', line) or not re.search(r'\)', line):
-                self.errors.append(f"Line {line_num + 1}: Syntax error in control statement")
+    # Добавление точек с запятыми в конце строк, если они не заканчиваются на ;, { или }
+    code_lines = code.split('\n')
+    for i in range(len(code_lines)):
+        line = code_lines[i].strip()
+        if line and not (line.endswith(';') or line.endswith('{') or line.endswith('}') or line.endswith(');')):
+            code_lines[i] = code_lines[i] + ';'
     
-    def check_comma_spacing(self, line, line_num):
-        if re.search(r',\S', line):
-            self.errors.append(f"Line {line_num + 1}: Missing space after comma")
+    # Заменяем более одного пустого ряда на один пустой ряд
+    code = '\n'.join(code_lines)
+    code = re.sub(r'\n\s*\n', '\n', code)
     
-    def check_brackets_spacing(self, line, line_num):
-        if re.search(r'\[\S', line):
-            self.errors.append(f"Line {line_num + 1}: Missing space after '['")
-        if re.search(r'\S\]', line):
-            self.errors.append(f"Line {line_num + 1}: Missing space before ']'")
-        if re.search(r'\{\S', line):
-            self.errors.append(f"Line {line_num + 1}: Missing space after '{{'")
-        if re.search(r'\S\}', line):
-            self.errors.append(f"Line {line_num + 1}: Missing space before '}}'")
-
-    def fix_comma_spacing(self, line, line_num):
-        return re.sub(r',(\S)', r', \1', line)
+    # Исправление случаев с пустыми блоками после if
+    code = re.sub(r'(\bif\b[^{;]*\));\s*{', r'\1 {', code)
     
-    def fix_brackets_spacing(self, line, line_num):
-        line = re.sub(r'\[\s*', '[ ', line)
-        line = re.sub(r'\s*\]', ' ]', line)
-        line = re.sub(r'\{\s*', '{ ', line)
-        line = re.sub(r'\s*\}', ' }', line)
-        return line
+    return code
 
-def open_file():
-    filepath = filedialog.askopenfilename(filetypes=[("GML Files", "*.gml"), ("All Files", "*.*")])
-    if filepath:
-        try:
-            with open(filepath, 'r', encoding='utf-8') as file:
-                code = file.read()
-        except UnicodeDecodeError:
-            result_text.delete(1.0, tk.END)
-            result_text.insert(tk.END, "Ошибка: не удалось декодировать файл. Попробуйте другой файл или измените его кодировку на UTF-8.")
-            return
-        
-        linter = GMLLinter()
-        errors, warnings, fixed_code = linter.lint(code)
+def copy_directory_to_desktop(src_directory):
+    desktop_path = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
+    dst_directory = os.path.join(desktop_path, os.path.basename(src_directory) + "_copy")
+    if os.path.exists(dst_directory):
+        shutil.rmtree(dst_directory)
+    shutil.copytree(src_directory, dst_directory)
+    return dst_directory
 
-        result_text.delete(1.0, tk.END)
-        result_text.insert(tk.END, "Errors:\n")
-        for error in errors:
-            result_text.insert(tk.END, error + "\n")
-        
-        result_text.insert(tk.END, "\nWarnings:\n")
-        for warning in warnings:
-            result_text.insert(tk.END, warning + "\n")
-        
-        save_fixed_code(filepath, fixed_code)
+def lint_gml_files_in_directory(directory):
+    linted_directory = os.path.join(directory, "linted_files")
+    os.makedirs(linted_directory, exist_ok=True)
 
-def save_fixed_code(original_filepath, fixed_code):
-    dir_path = os.path.dirname(original_filepath)
-    base_name = os.path.basename(original_filepath)
-    new_filepath = os.path.join(dir_path, f"fixed_{base_name}")
+    for root, _, files in os.walk(directory):
+        if 'linted_files' in root:
+            continue
+        for file in files:
+            if file.endswith(".gml"):
+                file_path = os.path.join(root, file)
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    code = f.read()
+                linted_code = lint_gml_code(code)
+                relative_path = os.path.relpath(root, directory)
+                linted_file_directory = os.path.join(linted_directory, relative_path)
+                os.makedirs(linted_file_directory, exist_ok=True)
+                linted_file_path = os.path.join(linted_file_directory, file)
+                with open(linted_file_path, 'w', encoding='utf-8') as f:
+                    f.write(linted_code)
+    
+    messagebox.showinfo("Готово", "Все файлы GML обработаны и сохранены в новой папке на рабочем столе!")
 
-    with open(new_filepath, 'w') as file:
-        file.write(fixed_code)
+def select_directory():
+    directory = filedialog.askdirectory()
+    if directory:
+        dst_directory = copy_directory_to_desktop(directory)
+        lint_gml_files_in_directory(dst_directory)
 
-    result_text.insert(tk.END, f"\nFixed code saved to: {new_filepath}")
+def create_gui():
+    root = tk.Tk()
+    root.title("GML Линтер")
 
-app = tk.Tk()
-app.title("GML Linter")
+    label = tk.Label(root, text="Выберите папку с файлами GML:")
+    label.pack(pady=10)
 
-open_button = tk.Button(app, text="Open GML File", command=open_file)
-open_button.pack(pady=10)
+    button = tk.Button(root, text="Выбрать папку", command=select_directory)
+    button.pack(pady=10)
 
-result_text = tk.Text(app, wrap='word', height=20, width=80)
-result_text.pack(pady=10)
+    root.mainloop()
 
-app.mainloop()
+if __name__ == "__main__":
+    create_gui()
