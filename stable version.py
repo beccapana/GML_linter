@@ -20,17 +20,21 @@ def lint_gml_code(code):
     # Добавление точек с запятыми в конце строк, если они не заканчиваются на ;, { или }
     code_lines = code.split('\n')
     for i in range(len(code_lines)):
-        line = code_lines[i].strip()
-        if line:
-            if '//' in line:
-                code_part, comment_part = line.split('//', 1)
+        line = code_lines[i]
+        stripped_line = line.strip()
+        if stripped_line:
+            leading_whitespace = line[:len(line) - len(line.lstrip())]
+            if stripped_line.startswith(';') or stripped_line.startswith('//'):
+                continue
+            if '//' in stripped_line:
+                code_part, comment_part = stripped_line.split('//', 1)
                 code_part = code_part.rstrip()
                 if not (code_part.endswith(';') or code_part.endswith('{') or code_part.endswith('}') or code_part.endswith(');')):
                     code_part += ';'
-                code_lines[i] = code_part + ' //' + comment_part
+                code_lines[i] = leading_whitespace + code_part + ' //' + comment_part
             else:
-                if not (line.endswith(';') or line.endswith('{') or line.endswith('}') or line.endswith(');')):
-                    code_lines[i] += ';'
+                if not (stripped_line.endswith(';') or stripped_line.endswith('{') or stripped_line.endswith('}') or stripped_line.endswith(');')):
+                    code_lines[i] = leading_whitespace + stripped_line + ';'
     
     # Заменяем более одного пустого ряда на один пустой ряд
     code = '\n'.join(code_lines)
@@ -50,26 +54,17 @@ def copy_directory_to_desktop(src_directory):
     return dst_directory
 
 def lint_gml_files_in_directory(directory):
-    linted_directory = os.path.join(directory, "linted_files")
-    os.makedirs(linted_directory, exist_ok=True)
-
     for root, _, files in os.walk(directory):
-        if 'linted_files' in root:
-            continue
         for file in files:
             if file.endswith(".gml"):
                 file_path = os.path.join(root, file)
                 with open(file_path, 'r', encoding='utf-8') as f:
                     code = f.read()
                 linted_code = lint_gml_code(code)
-                relative_path = os.path.relpath(root, directory)
-                linted_file_directory = os.path.join(linted_directory, relative_path)
-                os.makedirs(linted_file_directory, exist_ok=True)
-                linted_file_path = os.path.join(linted_file_directory, file)
-                with open(linted_file_path, 'w', encoding='utf-8') as f:
+                with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(linted_code)
     
-    messagebox.showinfo("Готово", "Все файлы GML обработаны и сохранены в новой папке на рабочем столе!")
+    messagebox.showinfo("Готово", "Все файлы GML обработаны и сохранены в своих исходных директориях!")
 
 def select_directory():
     directory = filedialog.askdirectory()
