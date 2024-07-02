@@ -24,7 +24,7 @@ def lint_gml_code(code):
         stripped_line = line.strip()
         if stripped_line:
             leading_whitespace = line[:len(line) - len(line.lstrip())]
-            if stripped_line.startswith(';') or stripped_line.startswith('//'):
+            if stripped_line.startswith(';') or stripped_line.startswith('//') or stripped_line.startswith('#'):
                 continue
             if '//' in stripped_line:
                 code_part, comment_part = stripped_line.split('//', 1)
