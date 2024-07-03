@@ -10,8 +10,13 @@ def lint_gml_code(code):
     
     # Удаление комментариев в самом начале кода, если они на английском
     lines = code.split('\n')
-    while lines and re.match(r'^\s*//\s*[a-zA-Z]', lines[0]):
+    while lines and re.match(r'^\s*///?\s*[a-zA-Z]*', lines[0]):
         lines.pop(0)
+    
+    # Удаление пустой строки между комментариями и кодом
+    while lines and lines[0].strip() == '':
+        lines.pop(0)
+        
     code = '\n'.join(lines)
     
     # Добавление точек с запятыми после определённых конструкций
@@ -19,13 +24,36 @@ def lint_gml_code(code):
     
     # Добавление точек с запятыми в конце строк, если они не заканчиваются на ;, { или }
     code_lines = code.split('\n')
+    inside_enum = False
+    
     for i in range(len(code_lines)):
         line = code_lines[i]
         stripped_line = line.strip()
-        if stripped_line:
+        
+        if stripped_line.startswith('enum'):
+            inside_enum = True
+        
+        if stripped_line.endswith('}'):
+            inside_enum = False
+        
+        if stripped_line and not inside_enum:
             leading_whitespace = line[:len(line) - len(line.lstrip())]
             if stripped_line.startswith(';') or stripped_line.startswith('//') or stripped_line.startswith('#'):
                 continue
+            if re.search(r'\b(break|continue|return|else)\b', stripped_line):
+                continue
+            if stripped_line.startswith('enum') or stripped_line.startswith('function'):
+                continue
+            if stripped_line.endswith(',') or stripped_line.endswith(':'):
+                continue
+            if '++' in stripped_line:
+                code_part = stripped_line.split('++')[0]
+                if code_part.strip().endswith('++'):
+                    continue
+            if '--' in stripped_line:
+                code_part = stripped_line.split('--')[0]
+                if code_part.strip().endswith('--'):
+                    continue
             if '//' in stripped_line:
                 code_part, comment_part = stripped_line.split('//', 1)
                 code_part = code_part.rstrip()
@@ -38,7 +66,7 @@ def lint_gml_code(code):
     
     # Заменяем более одного пустого ряда на один пустой ряд
     code = '\n'.join(code_lines)
-    code = re.sub(r'\n\s*\n', '\n', code)
+    code = re.sub(r'\n\s*\n\s*\n', '\n\n', code)
     
     # Исправление случаев с пустыми блоками после if
     code = re.sub(r'(\bif\b[^{;]*\));\s*{', r'\1 {', code)
