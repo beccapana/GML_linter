@@ -10,7 +10,7 @@ def lint_gml_code(code):
     
     # Удаление комментариев в самом начале кода, если они на английском
     lines = code.split('\n')
-    while lines and re.match(r'^\s*///?\s*[a-zA-Z]*', lines[0]):
+    while lines and re.match(r'^\s*///?\s*[a-zA-Z]', lines[0]):
         lines.pop(0)
     
     # Удаление пустой строки между комментариями и кодом
@@ -40,7 +40,7 @@ def lint_gml_code(code):
             leading_whitespace = line[:len(line) - len(line.lstrip())]
             if stripped_line.startswith(';') or stripped_line.startswith('//') or stripped_line.startswith('#'):
                 continue
-            if re.search(r'\b(break|continue|return|else)\b', stripped_line):
+            if re.search(r'\b(break|continue|return|else|case)\b', stripped_line):
                 continue
             if stripped_line.startswith('enum') or stripped_line.startswith('function'):
                 continue
