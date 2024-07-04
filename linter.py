@@ -16,13 +16,13 @@ def lint_gml_code(code):
     # Удаление пустой строки между комментариями и кодом
     while lines and lines[0].strip() == '':
         lines.pop(0)
-        
+    
+    # Объединение строк кода обратно в одну строку
     code = '\n'.join(lines)
     
     # Добавление точек с запятыми после определённых конструкций
     code = re.sub(r'(\b(if|while|for|switch|with|repeat|else)\b[^{;]*\))\s*(?=\{)', r'\1;', code)
     
-    # Добавление точек с запятыми в конце строк, если они не заканчиваются на ;, { или }
     code_lines = code.split('\n')
     inside_enum = False
     
@@ -30,22 +30,32 @@ def lint_gml_code(code):
         line = code_lines[i]
         stripped_line = line.strip()
         
+        # Обработка блоков enum
         if stripped_line.startswith('enum'):
             inside_enum = True
-        
         if stripped_line.endswith('}'):
             inside_enum = False
         
         if stripped_line and not inside_enum:
             leading_whitespace = line[:len(line) - len(line.lstrip())]
+            
+            # Пропуск строк, начинающихся с ';', '//' или '#'
             if stripped_line.startswith(';') or stripped_line.startswith('//') or stripped_line.startswith('#'):
                 continue
+            
+            # Пропуск строк, содержащих ключевые слова 'break', 'continue', 'return', 'else', 'case'
             if re.search(r'\b(break|continue|return|else|case)\b', stripped_line):
                 continue
+            
+            # Пропуск строк, начинающихся с 'enum' или 'function'
             if stripped_line.startswith('enum') or stripped_line.startswith('function'):
                 continue
+            
+            # Пропуск строк, заканчивающихся на ',' или ':'
             if stripped_line.endswith(',') or stripped_line.endswith(':'):
                 continue
+            
+            # Обработка строк с '++' и '--'
             if '++' in stripped_line:
                 code_part = stripped_line.split('++')[0]
                 if code_part.strip().endswith('++'):
@@ -54,6 +64,8 @@ def lint_gml_code(code):
                 code_part = stripped_line.split('--')[0]
                 if code_part.strip().endswith('--'):
                     continue
+            
+            # Обработка строк с комментариями
             if '//' in stripped_line:
                 code_part, comment_part = stripped_line.split('//', 1)
                 code_part = code_part.rstrip()
@@ -64,7 +76,7 @@ def lint_gml_code(code):
                 if not (stripped_line.endswith(';') or stripped_line.endswith('{') or stripped_line.endswith('}') or stripped_line.endswith(');')):
                     code_lines[i] = leading_whitespace + stripped_line + ';'
     
-    # Заменяем более одного пустого ряда на один пустой ряд
+    # Объединение строк кода обратно в одну строку и удаление лишних пустых строк
     code = '\n'.join(code_lines)
     code = re.sub(r'\n\s*\n\s*\n', '\n\n', code)
     
@@ -74,7 +86,9 @@ def lint_gml_code(code):
     return code
 
 def copy_directory_to_desktop(src_directory):
+    # Определение пути к рабочему столу
     desktop_path = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
+    # Создание директории копии на рабочем столе
     dst_directory = os.path.join(desktop_path, os.path.basename(src_directory) + "_copy")
     if os.path.exists(dst_directory):
         shutil.rmtree(dst_directory)
@@ -82,6 +96,7 @@ def copy_directory_to_desktop(src_directory):
     return dst_directory
 
 def lint_gml_files_in_directory(directory):
+    # Проход по всем файлам в директории и её поддиректориях
     for root, _, files in os.walk(directory):
         for file in files:
             if file.endswith(".gml"):
@@ -89,26 +104,48 @@ def lint_gml_files_in_directory(directory):
                 with open(file_path, 'r', encoding='utf-8') as f:
                     code = f.read()
                 linted_code = lint_gml_code(code)
-                with open(file_path, 'w', encoding='utf-8') as f:
+                # Сохранение отредактированного кода в новый файл
+                linted_file_path = os.path.join(root, os.path.splitext(file)[0] + "_linted.gml")
+                with open(linted_file_path, 'w', encoding='utf-8') as f:
                     f.write(linted_code)
-    
-    messagebox.showinfo("Готово", "Все файлы GML обработаны и сохранены в своих исходных директориях!")
+    messagebox.showinfo("Готово", "Все файлы GML обработаны и сохранены в новых файлах!")
+
+def lint_gml_file(file_path):
+    with open(file_path, 'r', encoding='utf-8') as f:
+        code = f.read()
+    linted_code = lint_gml_code(code)
+    # Сохранение отредактированного кода в новый файл
+    linted_file_path = os.path.splitext(file_path)[0] + "_linted.gml"
+    with open(linted_file_path, 'w', encoding='utf-8') as f:
+        f.write(linted_code)
+    messagebox.showinfo("Готово", f"Файл {os.path.basename(file_path)} обработан и сохранен как {os.path.basename(linted_file_path)}!")
 
 def select_directory():
+    # Открытие диалога выбора директории
     directory = filedialog.askdirectory()
     if directory:
         dst_directory = copy_directory_to_desktop(directory)
         lint_gml_files_in_directory(dst_directory)
 
+def select_file():
+    # Открытие диалога выбора файла
+    file_path = filedialog.askopenfilename(filetypes=[("GML files", "*.gml")])
+    if file_path:
+        lint_gml_file(file_path)
+
 def create_gui():
+    # Создание GUI приложения
     root = tk.Tk()
     root.title("GML Линтер")
 
-    label = tk.Label(root, text="Выберите папку с файлами GML:")
+    label = tk.Label(root, text="Выберите папку или файл с GML кодом:")
     label.pack(pady=10)
 
-    button = tk.Button(root, text="Выбрать папку", command=select_directory)
-    button.pack(pady=10)
+    button_dir = tk.Button(root, text="Выбрать папку", command=select_directory)
+    button_dir.pack(pady=5)
+
+    button_file = tk.Button(root, text="Выбрать файл", command=select_file)
+    button_file.pack(pady=5)
 
     root.mainloop()
 
