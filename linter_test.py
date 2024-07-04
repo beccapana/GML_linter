@@ -90,6 +90,9 @@ def lint_gml_code(code):
             else:
                 # Добавление точки с запятой в конце строки, если это необходимо
                 if not (stripped_line.endswith(';') or stripped_line.endswith('{') or stripped_line.endswith('}') or stripped_line.endswith(');') or stripped_line.endswith(':')):
+                    # Проверка, что следующая строка не начинается с '{'
+                    if i + 1 < len(code_lines) and code_lines[i + 1].strip().startswith('{'):
+                        continue
                     code_lines[i] = leading_whitespace + stripped_line + ';'
     
     # Объединение строк кода обратно в одну строку и удаление лишних пустых строк
