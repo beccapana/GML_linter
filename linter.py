@@ -104,11 +104,10 @@ def lint_gml_files_in_directory(directory):
                 with open(file_path, 'r', encoding='utf-8') as f:
                     code = f.read()
                 linted_code = lint_gml_code(code)
-                # Сохранение отредактированного кода в новый файл
-                linted_file_path = os.path.join(root, os.path.splitext(file)[0] + "_linted.gml")
-                with open(linted_file_path, 'w', encoding='utf-8') as f:
+                # Сохранение отредактированного кода в тот же файл
+                with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(linted_code)
-    messagebox.showinfo("Готово", "Все файлы GML обработаны и сохранены в новых файлах!")
+    messagebox.showinfo("Готово", "Все файлы GML обработаны и сохранены в своих исходных директориях!")
 
 def lint_gml_file(file_path):
     with open(file_path, 'r', encoding='utf-8') as f:
@@ -124,7 +123,9 @@ def select_directory():
     # Открытие диалога выбора директории
     directory = filedialog.askdirectory()
     if directory:
+        # Создание копии директории на рабочем столе
         dst_directory = copy_directory_to_desktop(directory)
+        # Линтинг файлов в директории копии
         lint_gml_files_in_directory(dst_directory)
 
 def select_file():

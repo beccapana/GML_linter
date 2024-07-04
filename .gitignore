@@ -1,7 +1,10 @@
-
-fixed_scr_interface_system.gml
-GMLive_vm_init.gml
-scr_dialogues.gml
-scr_interface_system.gml
-fixed_cases.gml
-fixed_cases.gml
+*.gml
+*.spec
+*.exe
+*.toc
+*.zip
+*.pkg
+*.pyc
+*.pyz
+*.txt
+*.html
