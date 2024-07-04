@@ -21,7 +21,7 @@ def lint_gml_code(code):
     code = '\n'.join(lines)
     
     # Добавление точек с запятыми после определённых конструкций
-    code = re.sub(r'(\b(if|while|for|switch|with|repeat|else)\b[^{;]*\))\s*(?=\{)', r'\1;', code)
+    code = re.sub(r'(\b(if|while|for|switch|with|repeat|else)\b[^{;]*\))\s*(?=\{)', r'\1', code)
     
     code_lines = code.split('\n')
     inside_enum = False
