@@ -21,7 +21,7 @@ def lint_gml_code(code):
     code = '\n'.join(lines)
     
     # Обновление регулярного выражения для обработки конструкций
-    code = re.sub(r'(\b(if|while|for|switch|with|repeat|else)\b[^{;]*\))\s*(?=\{)', r'\1', code)
+    code = re.sub(r'(\b(if|while|for|switch|with|repeat|else|do)\b[^{;]*\))\s*(?=\{)', r'\1', code)
     
     code_lines = code.split('\n')
     inside_enum = False
@@ -57,7 +57,7 @@ def lint_gml_code(code):
                 continue
             
             # Пропуск строк, которые содержат функцию и заканчиваются на '{'
-            if stripped_line.endswith('{') and ('function' in stripped_line or re.search(r'\b(if|while|for|switch|with|repeat)\b', stripped_line)):
+            if stripped_line.endswith('{') and (re.search(r'\b(function|if|while|for|switch|with|repeat)\b', stripped_line)):
                 inside_block += 1
                 continue
             
@@ -84,6 +84,7 @@ def lint_gml_code(code):
                     code_part += ';'
                 code_lines[i] = leading_whitespace + code_part + ' //' + comment_part
             else:
+                # Добавление точки с запятой в конце строки, если это необходимо
                 if not (stripped_line.endswith(';') or stripped_line.endswith('{') or stripped_line.endswith('}') or stripped_line.endswith(');') or stripped_line.endswith(':')):
                     code_lines[i] = leading_whitespace + stripped_line + ';'
     
