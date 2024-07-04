@@ -25,7 +25,8 @@ def lint_gml_code(code):
     
     code_lines = code.split('\n')
     inside_enum = False
-    
+    inside_block = 0
+
     for i in range(len(code_lines)):
         line = code_lines[i]
         stripped_line = line.strip()
@@ -33,7 +34,7 @@ def lint_gml_code(code):
         # Обработка блоков enum
         if stripped_line.startswith('enum'):
             inside_enum = True
-        if stripped_line.endswith('}'):
+        if inside_enum and stripped_line.endswith('}'):
             inside_enum = False
         
         if stripped_line and not inside_enum:
@@ -56,7 +57,13 @@ def lint_gml_code(code):
                 continue
             
             # Пропуск строк, которые содержат функцию и заканчиваются на '{'
-            if stripped_line.endswith('{') and ('function' in stripped_line or 'if' in stripped_line or 'while' in stripped_line or 'for' in stripped_line or 'switch' in stripped_line or 'with' in stripped_line or 'repeat' in stripped_line):
+            if stripped_line.endswith('{') and ('function' in stripped_line or re.search(r'\b(if|while|for|switch|with|repeat)\b', stripped_line)):
+                inside_block += 1
+                continue
+            
+            # Пропуск строк, заканчивающихся на '}'
+            if stripped_line.endswith('}'):
+                inside_block -= 1
                 continue
             
             # Обработка строк с '++' и '--'
