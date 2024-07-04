@@ -66,6 +66,10 @@ def lint_gml_code(code):
                 inside_block -= 1
                 continue
             
+            # Пропуск строк, содержащих вызов функции с последующими фигурными скобками
+            if re.search(r'\b\w+\s*=\s*\w+\s*\([^;{]+\)\s*{', stripped_line):
+                continue
+            
             # Обработка строк с '++' и '--'
             if '++' in stripped_line:
                 code_part = stripped_line.split('++')[0]
