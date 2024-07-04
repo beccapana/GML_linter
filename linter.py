@@ -95,11 +95,14 @@ def copy_directory_to_desktop(src_directory):
     shutil.copytree(src_directory, dst_directory)
     return dst_directory
 
-def lint_gml_files_in_directory(directory):
+def lint_gml_files_in_directory(directory, include_special_files):
+    linted_files = []
     # Проход по всем файлам в директории и её поддиректориях
     for root, _, files in os.walk(directory):
         for file in files:
             if file.endswith(".gml"):
+                if not include_special_files and any(ignore in file.lower() for ignore in ["scribble", "gmlive"]):
+                    continue
                 file_path = os.path.join(root, file)
                 with open(file_path, 'r', encoding='utf-8') as f:
                     code = f.read()
@@ -107,6 +110,13 @@ def lint_gml_files_in_directory(directory):
                 # Сохранение отредактированного кода в тот же файл
                 with open(file_path, 'w', encoding='utf-8') as f:
                     f.write(linted_code)
+                linted_files.append(file_path)
+    
+    # Запись списка отредактированных файлов в файл linted_files.txt
+    linted_files_path = os.path.join(directory, 'linted_files.txt')
+    with open(linted_files_path, 'w', encoding='utf-8') as f:
+        f.write('\n'.join(linted_files))
+    
     messagebox.showinfo("Готово", "Все файлы GML обработаны и сохранены в своих исходных директориях!")
 
 def lint_gml_file(file_path):
@@ -119,14 +129,14 @@ def lint_gml_file(file_path):
         f.write(linted_code)
     messagebox.showinfo("Готово", f"Файл {os.path.basename(file_path)} обработан и сохранен как {os.path.basename(linted_file_path)}!")
 
-def select_directory():
+def select_directory(include_special_files):
     # Открытие диалога выбора директории
     directory = filedialog.askdirectory()
     if directory:
         # Создание копии директории на рабочем столе
         dst_directory = copy_directory_to_desktop(directory)
         # Линтинг файлов в директории копии
-        lint_gml_files_in_directory(dst_directory)
+        lint_gml_files_in_directory(dst_directory, include_special_files)
 
 def select_file():
     # Открытие диалога выбора файла
@@ -142,7 +152,11 @@ def create_gui():
     label = tk.Label(root, text="Выберите папку или файл с GML кодом:")
     label.pack(pady=10)
 
-    button_dir = tk.Button(root, text="Выбрать папку", command=select_directory)
+    include_special_files_var = tk.BooleanVar()
+    checkbox = tk.Checkbutton(root, text="Обрабатывать файлы со строками 'scribble', 'gmlive' и 'GMLive' в названии", variable=include_special_files_var)
+    checkbox.pack(pady=5)
+
+    button_dir = tk.Button(root, text="Выбрать папку", command=lambda: select_directory(include_special_files_var.get()))
     button_dir.pack(pady=5)
 
     button_file = tk.Button(root, text="Выбрать файл", command=select_file)
