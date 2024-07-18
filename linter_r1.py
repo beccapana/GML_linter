@@ -30,7 +30,7 @@ def process_files_in_directory(directory, log_file):
     processed_files = []
     for root, _, files in os.walk(directory):
         for file in files:
-            if file.endswith('.gml'):
+            if file.endswith('.gml') and not re.search(r'scribble|gmlive|GMLive', file, re.IGNORECASE):
                 file_path = os.path.join(root, file)
                 with open(file_path, 'r', encoding='utf-8') as f:
                     code = f.read()
