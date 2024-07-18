@@ -119,7 +119,9 @@ def lint_gml_code(code):
                     if i + 1 < len(code_lines) and code_lines[i + 1].strip().startswith('{'):
                         i += 1
                         continue
-                    code_lines[i] = leading_whitespace + stripped_line + ';'
+                    # Проверка на строки с массивами, чтобы не добавлять точку с запятой после квадратных скобок
+                    if not (stripped_line.endswith('[') or stripped_line.endswith(']')):
+                        code_lines[i] = leading_whitespace + stripped_line + ';'
         i += 1
     
     # Объединение строк кода обратно в одну строку и удаление лишних пустых строк
