@@ -25,59 +25,84 @@ def lint_gml_code(code):
     
     code_lines = code.split('\n')
     inside_enum = False
+    enum_lines = []
+    enum_start = -1
     inside_block = 0
 
-    for i in range(len(code_lines)):
+    i = 0
+    while i < len(code_lines):
         line = code_lines[i]
         stripped_line = line.strip()
         
         # Обработка блоков enum
         if stripped_line.startswith('enum'):
             inside_enum = True
-        if inside_enum and stripped_line.endswith('}'):
-            inside_enum = False
+            enum_start = i
+            enum_lines = [line]
+            i += 1
+            continue
+
+        if inside_enum:
+            enum_lines.append(line)
+            if stripped_line.endswith('}'):
+                inside_enum = False
+                # Удаление запятой после последней переменной в enum
+                enum_code = '\n'.join(enum_lines)
+                enum_code = re.sub(r',\s*(\})', r'\1', enum_code)
+                code_lines[enum_start:i+1] = enum_code.split('\n')
+            i += 1
+            continue
         
         if stripped_line and not inside_enum:
             leading_whitespace = line[:len(line) - len(line.lstrip())]
             
             # Пропуск строк, начинающихся с ';', '//' или '#'
             if stripped_line.startswith(';') or stripped_line.startswith('//') or stripped_line.startswith('#'):
+                i += 1
                 continue
             
             # Пропуск строк, содержащих ключевые слова 'break', 'continue', 'return', 'else', 'case'
             if re.search(r'\b(break|continue|return|else|case)\b', stripped_line):
+                i += 1
                 continue
             
             # Пропуск строк, начинающихся с 'enum' или 'function'
             if stripped_line.startswith('enum') or stripped_line.startswith('function'):
+                i += 1
                 continue
             
             # Пропуск строк, заканчивающихся на ',' или ':'
             if stripped_line.endswith(',') or stripped_line.endswith(':'):
+                i += 1
                 continue
             
             # Пропуск строк, которые содержат функцию и заканчиваются на '{'
             if stripped_line.endswith('{') and (re.search(r'\b(function|if|while|for|switch|with|repeat)\b', stripped_line)):
                 inside_block += 1
+                i += 1
                 continue
             
             # Пропуск строк, заканчивающихся на '}'
             if stripped_line.endswith('}'):
                 inside_block -= 1
+                i += 1
                 continue
             
             # Пропуск строк, содержащих вызов функции с последующими фигурными скобками
             if re.search(r'\b\w+\s*=\s*\w+\s*\([^;{]+\)\s*{', stripped_line):
+                i += 1
                 continue
             
             # Обработка строк с '++' и '--'
             if '++' in stripped_line:
                 code_part = stripped_line.split('++')[0]
                 if code_part.strip().endswith('++'):
+                    i += 1
                     continue
             if '--' in stripped_line:
                 code_part = stripped_line.split('--')[0]
                 if code_part.strip().endswith('--'):
+                    i += 1
                     continue
             
             # Обработка строк с комментариями
@@ -92,8 +117,10 @@ def lint_gml_code(code):
                 if not (stripped_line.endswith(';') or stripped_line.endswith('{') or stripped_line.endswith('}') or stripped_line.endswith(');') or stripped_line.endswith(':')):
                     # Проверка, что следующая строка не начинается с '{'
                     if i + 1 < len(code_lines) and code_lines[i + 1].strip().startswith('{'):
+                        i += 1
                         continue
                     code_lines[i] = leading_whitespace + stripped_line + ';'
+        i += 1
     
     # Объединение строк кода обратно в одну строку и удаление лишних пустых строк
     code = '\n'.join(code_lines)
