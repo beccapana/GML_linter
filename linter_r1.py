@@ -3,12 +3,19 @@ import re
 import shutil
 import tkinter as tk
 from tkinter import filedialog, messagebox
+from concurrent.futures import ThreadPoolExecutor
+import time
+
+# Компилируем регулярные выражения для кэширования
+comment_pattern = re.compile(r'^\s*//[a-zA-Z\s]*$')
+empty_lines_pattern = re.compile(r'\n\s*\n+')
+ignore_files_pattern = re.compile(r'scribble|gmlive|GMLive', re.IGNORECASE)
 
 def remove_english_comments_and_trim_start(code):
     lines = code.split('\n')
     
     # Удаляем комментарии в начале кода, если они на английском
-    while lines and re.match(r'^\s*//[a-zA-Z\s]*$', lines[0]):
+    while lines and comment_pattern.match(lines[0]):
         lines.pop(0)
     
     # Удаляем пустые строки в начале кода
@@ -19,31 +26,44 @@ def remove_english_comments_and_trim_start(code):
 
 def reduce_empty_lines(code):
     # Заменяем более одной пустой строки на одну
-    return re.sub(r'\n\s*\n+', '\n\n', code)
+    return empty_lines_pattern.sub('\n\n', code)
 
 def lint_gml_code(code):
     code = remove_english_comments_and_trim_start(code)
     code = reduce_empty_lines(code)
     return code
 
+def process_file(file_path):
+    with open(file_path, 'r', encoding='utf-8') as f:
+        code = f.read()
+
+    linted_code = lint_gml_code(code)
+
+    with open(file_path, 'w', encoding='utf-8') as f:
+        f.write(linted_code)
+
+    return file_path
+
 def process_files_in_directory(directory, log_file):
-    processed_files = []
-    for root, _, files in os.walk(directory):
-        for file in files:
-            if file.endswith('.gml') and not re.search(r'scribble|gmlive|GMLive', file, re.IGNORECASE):
-                file_path = os.path.join(root, file)
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    code = f.read()
-                
-                linted_code = lint_gml_code(code)
-                
-                with open(file_path, 'w', encoding='utf-8') as f:
-                    f.write(linted_code)
-                
-                processed_files.append(file_path)
-                print(f'Processed {file_path}')
+    start_time = time.time()
     
-    # Записываем список обработанных файлов в лог файл
+    processed_files = []
+    with ThreadPoolExecutor() as executor:
+        futures = []
+        for root, _, files in os.walk(directory):
+            for file in files:
+                if file.endswith('.gml') and not ignore_files_pattern.search(file):
+                    file_path = os.path.join(root, file)
+                    futures.append(executor.submit(process_file, file_path))
+        
+        for future in futures:
+            processed_files.append(future.result())
+            print(f'Processed {future.result()}')
+
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"Linting process completed in {elapsed_time:.2f} seconds")
+
     with open(log_file, 'w', encoding='utf-8') as log:
         log.write("Processed files:\n")
         for file_path in processed_files:
@@ -54,21 +74,17 @@ def select_folder():
     if folder_selected:
         destination_folder = folder_selected + "_linted"
         
-        # Копируем выбранную папку в новую директорию
         if os.path.exists(destination_folder):
             shutil.rmtree(destination_folder)
         shutil.copytree(folder_selected, destination_folder)
         
-        # Путь к лог-файлу в директории линтера
         script_directory = os.path.dirname(os.path.abspath(__file__))
         log_file = os.path.join(script_directory, "processed_files_log.txt")
         
-        # Обрабатываем файлы в новой директории
         process_files_in_directory(destination_folder, log_file)
         
         messagebox.showinfo("Complete", f"Linting process is complete! Check the folder: {destination_folder} and the log file: {log_file}")
 
-# Создание UI
 root = tk.Tk()
 root.title("GML Linter")
 
