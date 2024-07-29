@@ -6,6 +6,8 @@ from tkinter import filedialog, messagebox
 from concurrent.futures import ThreadPoolExecutor
 import time
 import threading
+from tkinter import ttk
+import queue
 
 # Компиляция регулярных выражений для повторного использования
 enum_regex = re.compile(r',\s*(\})')
@@ -134,9 +136,13 @@ def process_gml_file(file_path):
         f.write(linted_code)
     return file_path
 
-def lint_gml_files_in_directory(directory, include_special_files):
+def lint_gml_files_in_directory(directory, include_special_files, progress_queue):
     linted_files = []
     start_time = time.time()
+    
+    total_files = sum(1 for root, _, files in os.walk(directory) for file in files if file.endswith(".gml") and (include_special_files or not any(ignore in file.lower() for ignore in ["scribble", "gmlive"])))
+    processed_files = 0
+    
     with ThreadPoolExecutor() as executor:
         futures = []
         for root, _, files in os.walk(directory):
@@ -146,8 +152,11 @@ def lint_gml_files_in_directory(directory, include_special_files):
                         continue
                     file_path = os.path.join(root, file)
                     futures.append(executor.submit(process_gml_file, file_path))
+        
         for future in futures:
             linted_files.append(future.result())
+            processed_files += 1
+            progress_queue.put((processed_files, total_files))
     
     end_time = time.time()
     linting_duration = end_time - start_time
@@ -156,7 +165,9 @@ def lint_gml_files_in_directory(directory, include_special_files):
     with open(linted_files_path, 'w', encoding='utf-8') as f:
         f.write('\n'.join(linted_files))
     
+    progress_queue.put((total_files, total_files))  # Завершаем процесс
     messagebox.showinfo("Готово", f"Все файлы GML обработаны и сохранены в своих исходных директориях!\nВремя обработки: {linting_duration:.2f} секунд.")
+    progress_queue.put(None)  # Сообщение о завершении процесса для сброса progress bar
 
 def lint_gml_file(file_path):
     start_time = time.time()
@@ -168,18 +179,36 @@ def lint_gml_file(file_path):
 def select_directory(include_special_files):
     directory = filedialog.askdirectory()
     if directory:
-        threading.Thread(target=lambda: _select_directory(directory, include_special_files)).start()
+        progress_queue = queue.Queue()
+        threading.Thread(target=lambda: _select_directory(directory, include_special_files, progress_queue)).start()
+        threading.Thread(target=lambda: update_progress_bar(progress_queue)).start()
 
-def _select_directory(directory, include_special_files):
+def _select_directory(directory, include_special_files, progress_queue):
     dst_directory = copy_directory_to_desktop(directory)
-    lint_gml_files_in_directory(dst_directory, include_special_files)
+    lint_gml_files_in_directory(dst_directory, include_special_files, progress_queue)
 
 def select_file():
     file_path = filedialog.askopenfilename(filetypes=[("GML files", "*.gml")])
     if file_path:
         threading.Thread(target=lambda: lint_gml_file(file_path)).start()
 
+def update_progress_bar(progress_queue):
+    while True:
+        try:
+            message = progress_queue.get_nowait()
+            if message is None:  # Завершение процесса
+                progress_var.set(0)  # Сброс прогресс-бара
+                root.update_idletasks()
+                break
+            current, total = message
+            progress_var.set((current / total) * 100)
+            root.update_idletasks()
+        except queue.Empty:
+            time.sleep(0.1)  # Немного задержки для предотвращения загрузки CPU
+
 def create_gui():
+    global root, progress_var
+
     root = tk.Tk()
     root.title("GML Линтер")
 
@@ -195,6 +224,10 @@ def create_gui():
 
     button_file = tk.Button(root, text="Выбрать файл", command=select_file)
     button_file.pack(pady=5)
+
+    progress_var = tk.DoubleVar()
+    progress_bar = ttk.Progressbar(root, variable=progress_var, maximum=100)
+    progress_bar.pack(pady=10, fill=tk.X)
 
     root.mainloop()
 
