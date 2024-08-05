@@ -1,5 +1,5 @@
-import re
 import os
+import re
 import shutil
 import tkinter as tk
 from tkinter import filedialog, messagebox
@@ -9,227 +9,235 @@ import threading
 from tkinter import ttk
 import queue
 
-# Компиляция регулярных выражений для повторного использования
-enum_regex = re.compile(r',\s*(\})')
-if_while_for_regex = re.compile(r'(\b(if|while|for|switch|with|repeat|else|do)\b[^{;]*\))\s*(?=\{)')
-special_line_regex = re.compile(r'^\s*///?\s*[a-zA-Z]')
-block_start_regex = re.compile(r'\b(function|if|while|for|switch|with|repeat)\b')
-block_function_call_regex = re.compile(r'\b\w+\s*=\s*\w+\s*\([^;{]+\)\s*{')
-comment_regex = re.compile(r'\b(break|continue|return|else|case)\b')
+# Компилируем регулярные выражения для кэширования
+comment_pattern = re.compile(r'^\s*//[/\w\s]*$')
+empty_lines_pattern = re.compile(r'\n\s*\n+')
 
-def lint_gml_code(code):
-    code = code.lstrip()
+ignore_files_pattern = re.compile(r'scribble|gmlive|fmod', re.IGNORECASE)
+
+def update_ignore_files_pattern():
+    global ignore_files_pattern
+    patterns = []
+    if scribble_var.get():
+        patterns.append('scribble')
+    if gmlive_var.get():
+        patterns.append('gmlive')
+    if fmod_var.get():
+        patterns.append('fmod')
     
+    if patterns:
+        ignore_files_pattern = re.compile('|'.join(patterns), re.IGNORECASE)
+    else:
+        ignore_files_pattern = re.compile(r'$^')  # Паттерн, который никогда не совпадет
+
+def remove_english_comments_and_trim_start(code):
     lines = code.split('\n')
-    while lines and special_line_regex.match(lines[0]):
-        lines.pop(0)
+    comment_block_started = False
+    
+    while lines:
+        line = lines[0]
+        if comment_pattern.match(line):
+            comment_block_started = True
+            lines.pop(0)
+        elif comment_block_started and line.strip() == '':
+            lines.pop(0)
+        else:
+            break
     
     while lines and lines[0].strip() == '':
         lines.pop(0)
     
-    code = '\n'.join(lines)
-    
-    code = if_while_for_regex.sub(r'\1', code)
-    
-    code_lines = code.split('\n')
-    inside_enum = False
-    enum_lines = []
-    enum_start = -1
-    inside_block = 0
+    return '\n'.join(lines)
 
-    i = 0
-    while i < len(code_lines):
-        line = code_lines[i]
-        stripped_line = line.strip()
-        
-        if stripped_line.startswith('enum'):
-            inside_enum = True
-            enum_start = i
-            enum_lines = [line]
-            i += 1
-            continue
+def reduce_empty_lines(code):
+    return empty_lines_pattern.sub('\n\n', code)
 
-        if inside_enum:
-            enum_lines.append(line)
-            if stripped_line.endswith('}'):
-                inside_enum = False
-                enum_code = '\n'.join(enum_lines)
-                enum_code = enum_regex.sub(r'\1', enum_code)
-                code_lines[enum_start:i+1] = enum_code.split('\n')
-            i += 1
-            continue
-        
-        if stripped_line and not inside_enum:
-            leading_whitespace = line[:len(line) - len(line.lstrip())]
-            
-            if stripped_line.startswith(';') or stripped_line.startswith('//') or stripped_line.startswith('#'):
-                i += 1
-                continue
-            
-            if comment_regex.search(stripped_line):
-                i += 1
-                continue
-            
-            if stripped_line.startswith('enum') or stripped_line.startswith('function'):
-                i += 1
-                continue
-            
-            if stripped_line.endswith(',') or stripped_line.endswith(':'):
-                i += 1
-                continue
-            
-            if stripped_line.endswith('{') and block_start_regex.search(stripped_line):
-                inside_block += 1
-                i += 1
-                continue
-            
-            if stripped_line.endswith('}'):
-                inside_block -= 1
-                i += 1
-                continue
-            
-            if block_function_call_regex.search(stripped_line):
-                i += 1
-                continue
-            
-            if '++' in stripped_line or '--' in stripped_line:
-                code_part = stripped_line.split('++' if '++' in stripped_line else '--')[0]
-                if code_part.strip().endswith(('++', '--')):
-                    i += 1
-                    continue
-            
-            if '//' in stripped_line:
-                code_part, comment_part = stripped_line.split('//', 1)
-                code_part = code_part.rstrip()
-                if not (code_part.endswith(';') or code_part.endswith('{') or code_part.endswith('}') or code_part.endswith(');')):
-                    code_part += ';'
-                code_lines[i] = leading_whitespace + code_part + ' //' + comment_part
-            else:
-                if not (stripped_line.endswith(';') or stripped_line.endswith('{') or stripped_line.endswith('}') or stripped_line.endswith(');') or stripped_line.endswith(':')):
-                    if i + 1 < len(code_lines) and code_lines[i + 1].strip().startswith('{'):
-                        i += 1
-                        continue
-                    if not (stripped_line.endswith('[') or stripped_line.endswith(']')):
-                        code_lines[i] = leading_whitespace + stripped_line + ';'
-        i += 1
-    
-    code = '\n'.join(code_lines)
-    code = re.sub(r'\n\s*\n\s*\n', '\n\n', code)
-    
-    code = re.sub(r'(\bif\b[^{;]*\));\s*{', r'\1 {', code)
-    
+def lint_gml_code(code):
+    code = remove_english_comments_and_trim_start(code)
+    code = reduce_empty_lines(code)
     return code
 
-def copy_directory_to_desktop(src_directory):
-    desktop_path = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
-    dst_directory = os.path.join(desktop_path, os.path.basename(src_directory) + "_copy")
-    if os.path.exists(dst_directory):
-        shutil.rmtree(dst_directory)
-    shutil.copytree(src_directory, dst_directory)
-    return dst_directory
-
-def process_gml_file(file_path):
+def process_file(file_path, log_queue):
+    log_queue.put(f'Processing file: {file_path}')
     with open(file_path, 'r', encoding='utf-8') as f:
         code = f.read()
+
     linted_code = lint_gml_code(code)
+
     with open(file_path, 'w', encoding='utf-8') as f:
         f.write(linted_code)
+
+    log_queue.put(f'Processed file: {file_path}')
     return file_path
 
-def lint_gml_files_in_directory(directory, include_special_files, progress_queue):
-    linted_files = []
+def should_ignore_file(file):
+    return ignore_files_pattern.search(file)
+
+def process_files_in_directory(directory, log_file, progress_queue, log_queue):
     start_time = time.time()
     
-    total_files = sum(1 for root, _, files in os.walk(directory) for file in files if file.endswith(".gml") and (include_special_files or not any(ignore in file.lower() for ignore in ["scribble", "gmlive"])))
-    processed_files = 0
+    processed_files = []
+    total_files = 0
+    current_file = 0
+
+    # Подсчёт общего количества файлов
+    for _, _, files in os.walk(directory):
+        total_files += len([file for file in files if file.endswith('.gml') and not should_ignore_file(file)])
     
     with ThreadPoolExecutor() as executor:
         futures = []
         for root, _, files in os.walk(directory):
             for file in files:
-                if file.endswith(".gml"):
-                    if not include_special_files and any(ignore in file.lower() for ignore in ["scribble", "gmlive"]):
-                        continue
+                if file.endswith('.gml') and not should_ignore_file(file):
                     file_path = os.path.join(root, file)
-                    futures.append(executor.submit(process_gml_file, file_path))
+                    futures.append(executor.submit(process_file, file_path, log_queue))
         
         for future in futures:
-            linted_files.append(future.result())
-            processed_files += 1
-            progress_queue.put((processed_files, total_files))
-    
+            result = future.result()
+            processed_files.append(result)
+            current_file += 1
+            # Публикуем обновление в очередь
+            if current_file % 10 == 0:
+                progress_queue.put((current_file, total_files))
+            log_queue.put(f'Processed {result}')
+
     end_time = time.time()
-    linting_duration = end_time - start_time
+    elapsed_time = end_time - start_time
+    log_queue.put(f"Linting process completed in {elapsed_time:.2f} seconds")
 
-    linted_files_path = os.path.join(directory, 'linted_files.txt')
-    with open(linted_files_path, 'w', encoding='utf-8') as f:
-        f.write('\n'.join(linted_files))
-    
-    progress_queue.put((total_files, total_files))  # Завершаем процесс
-    messagebox.showinfo("Готово", f"Все файлы GML обработаны и сохранены в своих исходных директориях!\nВремя обработки: {linting_duration:.2f} секунд.")
-    progress_queue.put(None)  # Сообщение о завершении процесса для сброса progress bar
+    with open(log_file, 'w', encoding='utf-8') as log:
+        log.write("Processed files:\n")
+        for file_path in processed_files:
+            log.write(f"{file_path}\n")
 
-def lint_gml_file(file_path):
+    # Сигнализируем завершение
+    progress_queue.put((total_files, total_files))
+
+def process_individual_files(files, log_file, progress_queue, log_queue):
     start_time = time.time()
-    linted_file_path = process_gml_file(file_path)
+    
+    processed_files = []
+    total_files = len(files)
+    current_file = 0
+
+    with ThreadPoolExecutor() as executor:
+        futures = []
+        for file_path in files:
+            futures.append(executor.submit(process_file, file_path, log_queue))
+        
+        for future in futures:
+            result = future.result()
+            processed_files.append(result)
+            current_file += 1
+            # Публикуем обновление в очередь
+            if current_file % 1 == 0:  # Обновляем прогресс на каждый файл
+                progress_queue.put((current_file, total_files))
+            log_queue.put(f'Processed {result}')
+
     end_time = time.time()
-    linting_duration = end_time - start_time
-    messagebox.showinfo("Готово", f"Файл {os.path.basename(file_path)} обработан и сохранен как {os.path.basename(linted_file_path)}!\nВремя обработки: {linting_duration:.2f} секунд.")
+    elapsed_time = end_time - start_time
+    log_queue.put(f"Linting process completed in {elapsed_time:.2f} seconds")
 
-def select_directory(include_special_files):
-    directory = filedialog.askdirectory()
-    if directory:
+    with open(log_file, 'w', encoding='utf-8') as log:
+        log.write("Processed files:\n")
+        for file_path in processed_files:
+            log.write(f"{file_path}\n")
+
+    # Сигнализируем завершение
+    progress_queue.put((total_files, total_files))
+
+def select_folder():
+    folder_selected = filedialog.askdirectory()
+    if folder_selected:
         progress_queue = queue.Queue()
-        threading.Thread(target=lambda: _select_directory(directory, include_special_files, progress_queue)).start()
+        log_queue = queue.Queue()
+        threading.Thread(target=lambda: _process_selected_folder(folder_selected, progress_queue, log_queue)).start()
         threading.Thread(target=lambda: update_progress_bar(progress_queue)).start()
+        threading.Thread(target=lambda: update_log(log_queue)).start()
 
-def _select_directory(directory, include_special_files, progress_queue):
-    dst_directory = copy_directory_to_desktop(directory)
-    lint_gml_files_in_directory(dst_directory, include_special_files, progress_queue)
+def select_files():
+    files_selected = filedialog.askopenfilenames(filetypes=[("GML files", "*.gml")])
+    if files_selected:
+        progress_queue = queue.Queue()
+        log_queue = queue.Queue()
+        threading.Thread(target=lambda: _process_selected_files(files_selected, progress_queue, log_queue)).start()
+        threading.Thread(target=lambda: update_progress_bar(progress_queue)).start()
+        threading.Thread(target=lambda: update_log(log_queue)).start()
 
-def select_file():
-    file_path = filedialog.askopenfilename(filetypes=[("GML files", "*.gml")])
-    if file_path:
-        threading.Thread(target=lambda: lint_gml_file(file_path)).start()
+def _process_selected_folder(folder_selected, progress_queue, log_queue):
+    destination_folder = os.path.join(os.path.expanduser("~"), "Desktop", os.path.basename(folder_selected) + "_linted")
+    
+    if os.path.exists(destination_folder):
+        shutil.rmtree(destination_folder)
+    shutil.copytree(folder_selected, destination_folder)
+    
+    script_directory = os.path.dirname(os.path.abspath(__file__))
+    log_file = os.path.join(script_directory, "processed_files_log.txt")
+    
+    process_files_in_directory(destination_folder, log_file, progress_queue, log_queue)
+    
+    messagebox.showinfo("Complete", f"Linting process is complete! Check the folder: {destination_folder} and the log file: {log_file}")
+
+def _process_selected_files(files_selected, progress_queue, log_queue):
+    script_directory = os.path.dirname(os.path.abspath(__file__))
+    log_file = os.path.join(script_directory, "processed_files_log.txt")
+    
+    process_individual_files(files_selected, log_file, progress_queue, log_queue)
+    
+    messagebox.showinfo("Complete", f"Linting process is complete! Check the log file: {log_file}")
 
 def update_progress_bar(progress_queue):
     while True:
         try:
-            message = progress_queue.get_nowait()
-            if message is None:  # Завершение процесса
-                progress_var.set(0)  # Сброс прогресс-бара
-                root.update_idletasks()
-                break
-            current, total = message
+            current, total = progress_queue.get_nowait()
             progress_var.set((current / total) * 100)
+            root.update_idletasks()
+            if current >= total:
+                break
+        except queue.Empty:
+            time.sleep(0.1)  # Немного задержки для предотвращения загрузки CPU
+
+def update_log(log_queue):
+    while True:
+        try:
+            message = log_queue.get_nowait()
+            log_text.insert(tk.END, message + '\n')
+            log_text.yview(tk.END)
             root.update_idletasks()
         except queue.Empty:
             time.sleep(0.1)  # Немного задержки для предотвращения загрузки CPU
 
-def create_gui():
-    global root, progress_var
+root = tk.Tk()
+root.title("GML Linter")
 
-    root = tk.Tk()
-    root.title("GML Линтер")
+frame = tk.Frame(root, padx=10, pady=10)
+frame.pack(padx=10, pady=10)
 
-    label = tk.Label(root, text="Выберите папку или файл с GML кодом:")
-    label.pack(pady=10)
+label = tk.Label(frame, text="Select a folder or files to lint GML files:")
+label.pack(pady=5)
 
-    include_special_files_var = tk.BooleanVar()
-    checkbox = tk.Checkbutton(root, text="Обрабатывать файлы со строками 'scribble', 'gmlive' и 'GMLive' в названии", variable=include_special_files_var)
-    checkbox.pack(pady=5)
+button_folder = tk.Button(frame, text="Select Folder", command=select_folder)
+button_folder.pack(pady=5)
 
-    button_dir = tk.Button(root, text="Выбрать папку", command=lambda: select_directory(include_special_files_var.get()))
-    button_dir.pack(pady=5)
+button_files = tk.Button(frame, text="Select Files", command=select_files)
+button_files.pack(pady=5)
 
-    button_file = tk.Button(root, text="Выбрать файл", command=select_file)
-    button_file.pack(pady=5)
+scribble_var = tk.BooleanVar(value=True)
+gmlive_var = tk.BooleanVar(value=True)
+fmod_var = tk.BooleanVar(value=True)
 
-    progress_var = tk.DoubleVar()
-    progress_bar = ttk.Progressbar(root, variable=progress_var, maximum=100)
-    progress_bar.pack(pady=10, fill=tk.X)
+check_scribble = tk.Checkbutton(frame, text="Ignore scribble", variable=scribble_var, command=update_ignore_files_pattern)
+check_scribble.pack(anchor=tk.W)
+check_gmlive = tk.Checkbutton(frame, text="Ignore gmlive", variable=gmlive_var, command=update_ignore_files_pattern)
+check_gmlive.pack(anchor=tk.W)
+check_fmod = tk.Checkbutton(frame, text="Ignore fmod", variable=fmod_var, command=update_ignore_files_pattern)
+check_fmod.pack(anchor=tk.W)
 
-    root.mainloop()
+progress_var = tk.DoubleVar()
+progress_bar = ttk.Progressbar(frame, variable=progress_var, maximum=100)
+progress_bar.pack(pady=5, fill=tk.X)
 
-if __name__ == "__main__":
-    create_gui()
+log_text = tk.Text(frame, height=15, width=80, wrap=tk.WORD)
+log_text.pack(pady=5)
+
+root.mainloop()
