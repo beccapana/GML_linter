@@ -10,7 +10,7 @@ from tkinter import ttk
 import queue
 
 # Компилируем регулярные выражения для кэширования
-comment_pattern = re.compile(r'^\s*//[/\w\s]*$')
+comment_pattern = re.compile(r'^\s*//[/@\w\s]*$')
 empty_lines_pattern = re.compile(r'\n\s*\n+')
 
 ignore_files_pattern = re.compile(r'scribble|gmlive|fmod', re.IGNORECASE)
@@ -165,7 +165,7 @@ def select_files():
         threading.Thread(target=lambda: update_log(log_queue)).start()
 
 def _process_selected_folder(folder_selected, progress_queue, log_queue):
-    destination_folder = os.path.join(os.path.expanduser("~"), "Desktop", os.path.basename(folder_selected) + "_linted")
+    destination_folder = folder_selected + "_linted"
     
     if os.path.exists(destination_folder):
         shutil.rmtree(destination_folder)
