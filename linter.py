@@ -43,7 +43,10 @@ def remove_specific_comments(code):
 
 def reduce_empty_lines(code):
     empty_lines_pattern = re.compile(r'\n\s*\n+')
-    return empty_lines_pattern.sub('\n\n', code)
+    code = empty_lines_pattern.sub('\n\n', code)
+    if code.endswith('\n'):
+        code = code.rstrip('\n')
+    return code
 
 def lint_gml_code(code):
     code = remove_specific_comments(code)
