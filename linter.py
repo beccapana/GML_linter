@@ -60,21 +60,38 @@ def process_file(file_path, log_queue):
 
     linted_code = lint_gml_code(code)
 
-    with open(file_path, 'w', encoding='utf-8') as f:
-        f.write(linted_code)
-
-    log_queue.put(f'Processed file: {file_path}')
-    return file_path
+    # Проверяем, стал ли файл пустым или содержит только 'event_inherited();'
+    if not linted_code.strip() or linted_code.strip() == 'event_inherited();':
+        os.remove(file_path)
+        log_queue.put(f'Deleted file: {file_path}')
+        return file_path  # Возвращаем путь удаленного файла
+    else:
+        with open(file_path, 'w', encoding='utf-8') as f:
+            f.write(linted_code)
+        log_queue.put(f'Processed file: {file_path}')
+        return None  # Возвращаем None, если файл не был удален
 
 def should_ignore_file(file):
     return ignore_files_pattern.search(file)
+
+def update_project_files(project_files, removed_files, folder_name):
+    for project_file in project_files:
+        with open(project_file, 'r', encoding='utf-8') as f:
+            lines = f.readlines()
+
+        with open(project_file, 'w', encoding='utf-8') as f:
+            for line in lines:
+                if not any(os.path.basename(removed_file) in line for removed_file in removed_files) and folder_name not in line:
+                    f.write(line)
 
 def process_files_in_directory(directory, log_file, progress_queue, log_queue):
     start_time = time.time()
     
     processed_files = []
+    removed_files = []
     total_files = 0
     current_file = 0
+    folder_name = os.path.basename(directory)
 
     # Подсчёт общего количества файлов
     for _, _, files in os.walk(directory):
@@ -90,12 +107,24 @@ def process_files_in_directory(directory, log_file, progress_queue, log_queue):
         
         for future in futures:
             result = future.result()
+            if result:  # Если файл был удален, добавляем его в removed_files
+                removed_files.append(result)
             processed_files.append(result)
             current_file += 1
             # Публикуем обновление в очередь
             if current_file % 10 == 0:
                 progress_queue.put((current_file, total_files))
             log_queue.put(f'Processed {result}')
+
+    # Обновляем файлы проекта
+    project_files = [os.path.join(directory, f) for f in os.listdir(directory) if f.endswith('.yyp') or f.endswith('.resource_order')]
+    update_project_files(project_files, removed_files, folder_name)
+
+    # Копируем изменённую папку на рабочий стол
+    destination_folder = os.path.join(os.path.expanduser("~"), "Desktop", os.path.basename(directory) + "_linted")
+    if os.path.exists(destination_folder):
+        shutil.rmtree(destination_folder)
+    shutil.copytree(directory, destination_folder)
 
     end_time = time.time()
     elapsed_time = end_time - start_time
@@ -104,7 +133,8 @@ def process_files_in_directory(directory, log_file, progress_queue, log_queue):
     with open(log_file, 'w', encoding='utf-8') as log:
         log.write("Processed files:\n")
         for file_path in processed_files:
-            log.write(f"{file_path}\n")
+            if file_path:  # Убедимся, что file_path не None
+                log.write(f"{file_path}\n")
 
     # Сигнализируем завершение
     progress_queue.put((total_files, total_files))
@@ -137,7 +167,8 @@ def process_individual_files(files, log_file, progress_queue, log_queue):
     with open(log_file, 'w', encoding='utf-8') as log:
         log.write("Processed files:\n")
         for file_path in processed_files:
-            log.write(f"{file_path}\n")
+            if file_path:  # Убедимся, что file_path не None
+                log.write(f"{file_path}\n")
 
     # Сигнализируем завершение
     progress_queue.put((total_files, total_files))
@@ -161,23 +192,13 @@ def select_files():
         threading.Thread(target=lambda: update_log(log_queue)).start()
 
 def _process_selected_folder(folder_selected, progress_queue, log_queue):
-    destination_folder = os.path.join(os.path.expanduser("~"), "Desktop", os.path.basename(folder_selected) + "_linted")
+    log_file = os.path.join(folder_selected, "lint_log.txt")
+    process_files_in_directory(folder_selected, log_file, progress_queue, log_queue)
     
-    if os.path.exists(destination_folder):
-        shutil.rmtree(destination_folder)
-    shutil.copytree(folder_selected, destination_folder)
-    
-    script_directory = os.path.dirname(os.path.abspath(__file__))
-    log_file = os.path.join(script_directory, "processed_files_log.txt")
-    
-    process_files_in_directory(destination_folder, log_file, progress_queue, log_queue)
-    
-    messagebox.showinfo("Complete", f"Linting process is complete! Check the folder: {destination_folder} and the log file: {log_file}")
+    messagebox.showinfo("Complete", f"Linting process is complete! Check the log file: {log_file}")
 
 def _process_selected_files(files_selected, progress_queue, log_queue):
-    script_directory = os.path.dirname(os.path.abspath(__file__))
-    log_file = os.path.join(script_directory, "processed_files_log.txt")
-    
+    log_file = os.path.join(os.path.dirname(files_selected[0]), "lint_log.txt")
     process_individual_files(files_selected, log_file, progress_queue, log_queue)
     
     messagebox.showinfo("Complete", f"Linting process is complete! Check the log file: {log_file}")
