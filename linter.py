@@ -10,8 +10,14 @@ from tkinter import ttk
 import queue
 
 # Компилируем регулярные выражения для кэширования
-comment_pattern = re.compile(r'^\s*//[/@\w\s]*$')
-empty_lines_pattern = re.compile(r'\n\s*\n+')
+specific_comments_pattern = re.compile(
+    r'^\s*//\s*/?\s*@?\s*d\s*e\s*s\s*c\s*r\s*i\s*p\s*t\s*i\s*o\s*n\s*I\s*n\s*s\s*e\s*r\s*t\s*d\s*e\s*s\s*c\s*r\s*i\s*p\s*t\s*i\s*o\s*n\s*h\s*e\s*r\s*e\s*$|'
+    r'^\s*//?\s*Y\s*o\s*u\s*c\s*a\s*n\s*w\s*r\s*i\s*t\s*e\s*y\s*o\s*u\s*r\s*c\s*o\s*d\s*e\s*i\s*n\s*t\s*h\s*i\s*s\s*e\s*d\s*i\s*t\s*o\s*r\s*$|'
+    r'^\s*//?\s*В\s*ы\s*м\s*о\s*ж\s*е\s*т\s*е\s*з\s*а\s*п\s*и\s*с\s*а\s*т\s*ь\s*с\s*в\s*о\s*й\s*к\s*о\s*д\s*в\s*э\s*т\s*о\s*м\s*р\s*е\s*д\s*а\s*к\s*т\s*о\s*р\s*е\s*$|'
+    r'^\s*//\s*/?\s*@?\s*d\s*e\s*s\s*c\s*r\s*i\s*p\s*t\s*i\s*o\s*n\s*В\s*с\s*т\s*а\s*в\s*ь\s*т\s*е\s*о\s*п\s*и\s*с\s*а\s*н\s*и\s*е\s*з\s*д\s*е\s*с\s*ь\s*$|'
+    r'^\s*//?\s*i\s*t\s*t\s*h\s*e\s*p\s*a\s*r\s*e\s*n\s*t\s*e\s*v\s*e\s*n\s*t\s*$|'
+    r'^\s*//\s*/?\s*@?\s*d\s*e\s*s\s*c\s*r\s*i\s*p\s*t\s*i\s*o\s*n\s*A\s*n\s*e\s*x\s*a\s*m\s*p\s*l\s*e\s*$',
+    re.IGNORECASE | re.VERBOSE)
 
 ignore_files_pattern = re.compile(r'scribble|gmlive|fmod', re.IGNORECASE)
 
@@ -30,30 +36,17 @@ def update_ignore_files_pattern():
     else:
         ignore_files_pattern = re.compile(r'$^')  # Паттерн, который никогда не совпадет
 
-def remove_english_comments_and_trim_start(code):
+def remove_specific_comments(code):
     lines = code.split('\n')
-    comment_block_started = False
-    
-    while lines:
-        line = lines[0]
-        if comment_pattern.match(line):
-            comment_block_started = True
-            lines.pop(0)
-        elif comment_block_started and line.strip() == '':
-            lines.pop(0)
-        else:
-            break
-    
-    while lines and lines[0].strip() == '':
-        lines.pop(0)
-    
-    return '\n'.join(lines)
+    filtered_lines = [line for line in lines if not specific_comments_pattern.match(line)]
+    return '\n'.join(filtered_lines)
 
 def reduce_empty_lines(code):
+    empty_lines_pattern = re.compile(r'\n\s*\n+')
     return empty_lines_pattern.sub('\n\n', code)
 
 def lint_gml_code(code):
-    code = remove_english_comments_and_trim_start(code)
+    code = remove_specific_comments(code)
     code = reduce_empty_lines(code)
     return code
 
