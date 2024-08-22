@@ -1,4 +1,5 @@
 import os
+import json
 import re
 import shutil
 import tkinter as tk
@@ -6,7 +7,6 @@ from tkinter import filedialog, messagebox
 from concurrent.futures import ThreadPoolExecutor
 import time
 import threading
-from tkinter import ttk
 import queue
 
 # Компилируем регулярные выражения для кэширования
@@ -56,64 +56,81 @@ def lint_gml_code(code):
 def is_potentially_unwanted_file(code):
     lines = code.split('\n')
     for line in lines:
-        # Игнорируем строки, которые содержат только комментарии или пробелы
         if line.strip() and not line.strip().startswith('//'):
             return False
     return True
 
-def process_file(file_path, log_queue):
+def process_file(file_path, log_queue, do_not_delete_paths, do_not_edit_paths):
     log_queue.put(f'Processing file: {file_path}')
-    with open(file_path, 'r', encoding='utf-8') as f:
-        code = f.read()
+    
+    # Проверка исключений для удаления
+    if any(os.path.normpath(file_path).startswith(os.path.normpath(path)) for path in do_not_delete_paths):
+        log_queue.put(f'Skipped deletion (Do not delete): {file_path}')
+        return []  # Не удаляем и не редактируем файл
+
+    # Проверка исключений для редактирования
+    if any(os.path.normpath(file_path).startswith(os.path.normpath(path)) for path in do_not_edit_paths):
+        log_queue.put(f'Skipped editing (Do not edit): {file_path}')
+        return []  # Не редактируем файл, но оставляем его в исходном виде
+
+    try:
+        with open(file_path, 'r', encoding='utf-8') as f:
+            code = f.read()
+    except IOError as e:
+        log_queue.put(f'Error reading file {file_path}: {e}')
+        return []
 
     linted_code = lint_gml_code(code)
     
     if linted_code.strip() == '' or linted_code.strip() == 'event_inherited();':
-        os.remove(file_path)
-        log_queue.put(f'Deleted file: {file_path}')
+        if not any(os.path.normpath(file_path).startswith(os.path.normpath(path)) for path in do_not_delete_paths):
+            try:
+                os.remove(file_path)
+                log_queue.put(f'Deleted file: {file_path}')
+            except IOError as e:
+                log_queue.put(f'Error deleting file {file_path}: {e}')
         return []  # Не возвращаем удаленные файлы
     else:
-        with open(file_path, 'w', encoding='utf-8') as f:
-            f.write(linted_code)
-        log_queue.put(f'Processed file: {file_path}')
+        if not any(os.path.normpath(file_path).startswith(os.path.normpath(path)) for path in do_not_edit_paths):
+            try:
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(linted_code)
+                log_queue.put(f'Processed file: {file_path}')
+            except IOError as e:
+                log_queue.put(f'Error writing to file {file_path}: {e}')
         
         # Добавляем в потенциально нежелательные файлы только если они содержат только комментарии
         if is_potentially_unwanted_file(linted_code):
             return [file_path]
         return []
 
+def normalize_paths(paths):
+    """Нормализует и очищает пути из исключений."""
+    return [os.path.normpath(path.strip()) for path in paths if path.strip()]
+
 def should_ignore_file(file):
     return ignore_files_pattern.search(file)
 
-def process_files_in_directory(directory, log_file, progress_queue, log_queue):
+def process_files_in_directory(directory, log_file, log_queue, do_not_delete_paths, do_not_edit_paths):
     start_time = time.time()
     
     processed_files = []
-    total_files = 0
-    current_file = 0
     potential_unwanted_files = []
 
-    # Подсчёт общего количества файлов
-    for _, _, files in os.walk(directory):
-        total_files += len([file for file in files if file.endswith('.gml') and not should_ignore_file(file)])
-    
     with ThreadPoolExecutor() as executor:
         futures = []
         for root, _, files in os.walk(directory):
             for file in files:
                 if file.endswith('.gml') and not should_ignore_file(file):
                     file_path = os.path.join(root, file)
-                    futures.append(executor.submit(process_file, file_path, log_queue))
+                    futures.append(executor.submit(process_file, file_path, log_queue, do_not_delete_paths, do_not_edit_paths))
         
         for future in futures:
             result = future.result()
-            processed_files.append(result)
-            current_file += 1
-            potential_unwanted_files.extend(result)
-            # Публикуем обновление в очередь
-            if current_file % 10 == 0:
-                progress_queue.put((current_file, total_files))
-            log_queue.put(f'Processed {result}')
+            if result:
+                processed_files.extend(result)
+                potential_unwanted_files.extend(result)
+                log_queue.put(f'Processed {result}')
 
     end_time = time.time()
     elapsed_time = end_time - start_time
@@ -124,35 +141,26 @@ def process_files_in_directory(directory, log_file, progress_queue, log_queue):
         for file_path in processed_files:
             log.write(f"{file_path}\n")
     
-    # Если есть потенциально нежелательные файлы, показываем алерт
     if potential_unwanted_files:
         show_potential_unwanted_files_alert(potential_unwanted_files)
 
-    # Сигнализируем завершение
-    progress_queue.put((total_files, total_files))
-
-def process_individual_files(files, log_file, progress_queue, log_queue):
+def process_individual_files(files, log_file, log_queue, do_not_delete_paths, do_not_edit_paths):
     start_time = time.time()
     
     processed_files = []
-    total_files = len(files)
-    current_file = 0
     potential_unwanted_files = []
 
     with ThreadPoolExecutor() as executor:
         futures = []
         for file_path in files:
-            futures.append(executor.submit(process_file, file_path, log_queue))
+            futures.append(executor.submit(process_file, file_path, log_queue, do_not_delete_paths, do_not_edit_paths))
         
         for future in futures:
             result = future.result()
-            processed_files.append(result)
-            current_file += 1
-            potential_unwanted_files.extend(result)
-            # Публикуем обновление в очередь
-            if current_file % 1 == 0:  # Обновляем прогресс на каждый файл
-                progress_queue.put((current_file, total_files))
-            log_queue.put(f'Processed {result}')
+            if result:
+                processed_files.extend(result)
+                potential_unwanted_files.extend(result)
+                log_queue.put(f'Processed {result}')
 
     end_time = time.time()
     elapsed_time = end_time - start_time
@@ -163,12 +171,8 @@ def process_individual_files(files, log_file, progress_queue, log_queue):
         for file_path in processed_files:
             log.write(f"{file_path}\n")
     
-    # Если есть потенциально нежелательные файлы, показываем алерт
     if potential_unwanted_files:
         show_potential_unwanted_files_alert(potential_unwanted_files)
-
-    # Сигнализируем завершение
-    progress_queue.put((total_files, total_files))
 
 def show_potential_unwanted_files_alert(potential_unwanted_files):
     alert_window = tk.Toplevel(root)
@@ -198,7 +202,7 @@ def show_potential_unwanted_files_alert(potential_unwanted_files):
 
 def open_file(file_path):
     if os.path.exists(file_path):
-        os.startfile(file_path)  # Открытие файла в его ассоциированном приложении
+        os.startfile(file_path)
 
 def select_folder():
     folder_selected = filedialog.askdirectory()
@@ -215,78 +219,124 @@ def start_linting():
     directory = folder_path.get() if folder_path.get() else None
     
     if not directory and not selected_files:
-        messagebox.showerror("Error", "Please select a folder or files for linting")
+        messagebox.showerror("Error", "Please select a folder or files.")
         return
-    
-    log_file = os.path.join(os.path.expanduser("~"), 'lint_log.txt')
-    
-    progress_queue = queue.Queue()
-    log_queue = queue.Queue()
 
-    threading.Thread(target=update_progress, args=(progress_queue,)).start()
-    threading.Thread(target=show_logs, args=(log_queue,)).start()
+    log_file = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt")])
+    if not log_file:
+        return
+
+    log_queue = queue.Queue()
+    
+    do_not_delete_paths = normalize_paths(do_not_delete_text.get().strip().split(','))
+    do_not_edit_paths = normalize_paths(do_not_edit_text.get().strip().split(','))
+
+    def logging_thread():
+        while True:
+            message = log_queue.get()
+            if message is None:
+                break
+            log_text.insert(tk.END, message + "\n")
+            log_text.see(tk.END)
+
+    threading.Thread(target=logging_thread, daemon=True).start()
 
     if directory:
-        destination_folder = os.path.join(os.path.expanduser("~"), "Desktop", os.path.basename(directory) + "_linted")
-        
-        if os.path.exists(destination_folder):
-            shutil.rmtree(destination_folder)
-        shutil.copytree(directory, destination_folder)
-        
-        threading.Thread(target=process_files_in_directory, args=(destination_folder, log_file, progress_queue, log_queue)).start()
-    elif selected_files:
-        threading.Thread(target=process_individual_files, args=(selected_files, log_file, progress_queue, log_queue)).start()
+        threading.Thread(target=process_files_in_directory, args=(directory, log_file, log_queue, do_not_delete_paths, do_not_edit_paths), daemon=True).start()
+    else:
+        threading.Thread(target=process_individual_files, args=(selected_files, log_file, log_queue, do_not_delete_paths, do_not_edit_paths), daemon=True).start()
 
-def update_progress(progress_queue):
-    while True:
-        try:
-            current_file, total_files = progress_queue.get_nowait()
-            progress['value'] = (current_file / total_files) * 100
-            root.update_idletasks()
-            if current_file >= total_files:
-                break
-        except queue.Empty:
-            time.sleep(0.1)
+def save_settings():
+    settings = {
+        "do_not_delete": do_not_delete_text.get().strip(),
+        "do_not_edit": do_not_edit_text.get().strip()
+    }
+    with open('settings.json', 'w', encoding='utf-8') as f:
+        json.dump(settings, f, ensure_ascii=False, indent=4)
 
-def show_logs(log_queue):
-    while True:
-        try:
-            log_message = log_queue.get_nowait()
-            log_text.insert(tk.END, log_message + '\n')
-            log_text.see(tk.END)
-            if "Linting process completed" in log_message:
-                break
-        except queue.Empty:
-            time.sleep(0.1)
+def load_settings():
+    try:
+        with open('settings.json', 'r', encoding='utf-8') as f:
+            settings = json.load(f)
+            do_not_delete_text.insert(tk.END, settings.get("do_not_delete", ""))
+            do_not_edit_text.insert(tk.END, settings.get("do_not_edit", ""))
+    except FileNotFoundError:
+        pass
 
+def normalize_paths(paths):
+    return [os.path.normpath(path.strip()) for path in paths]
+
+# Основное окно
 root = tk.Tk()
 root.title("GML Linter")
 
+# Переменные
 folder_path = tk.StringVar()
 file_list = tk.StringVar()
-
-tk.Label(root, text="Select Folder:").grid(row=0, column=0, padx=10, pady=10, sticky=tk.W)
-tk.Entry(root, textvariable=folder_path, width=50).grid(row=0, column=1, padx=10, pady=10)
-tk.Button(root, text="Browse", command=select_folder).grid(row=0, column=2, padx=10, pady=10)
-
-tk.Label(root, text="or Select Files:").grid(row=1, column=0, padx=10, pady=10, sticky=tk.W)
-tk.Entry(root, textvariable=file_list, width=50).grid(row=1, column=1, padx=10, pady=10)
-tk.Button(root, text="Browse", command=select_files).grid(row=1, column=2, padx=10, pady=10)
-
-tk.Button(root, text="Start Linting", command=start_linting).grid(row=2, column=1, padx=10, pady=10)
-
-progress = ttk.Progressbar(root, orient="horizontal", length=400, mode="determinate")
-progress.grid(row=3, column=0, columnspan=3, padx=10, pady=10)
-
-log_text = tk.Text(root, wrap=tk.WORD, height=15, width=80)
-log_text.grid(row=4, column=0, columnspan=3, padx=10, pady=10)
 
 scribble_var = tk.BooleanVar(value=True)
 gmlive_var = tk.BooleanVar(value=True)
 fmod_var = tk.BooleanVar(value=True)
 
-tk.Checkbutton(root, text="Ignore scribble", variable=scribble_var, command=update_ignore_files_pattern).grid(row=5, column=0, padx=10, pady=10, sticky=tk.W)
-tk.Checkbutton(root, text="Ignore gmlive", variable=gmlive_var, command=update_ignore_files_pattern).grid(row=5, column=1, padx=10, pady=10, sticky=tk.W)
-tk.Checkbutton(root, text="Ignore fmod", variable=fmod_var, command=update_ignore_files_pattern).grid(row=5, column=2, padx=10, pady=10, sticky=tk.W)
+# UI элементы
+folder_label = tk.Label(root, text="Select folder:")
+folder_label.grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
 
+folder_entry = tk.Entry(root, textvariable=folder_path, width=50)
+folder_entry.grid(row=0, column=1, padx=5, pady=5)
+
+folder_button = tk.Button(root, text="Browse", command=select_folder)
+folder_button.grid(row=0, column=2, padx=5, pady=5)
+
+files_label = tk.Label(root, text="Or select files:")
+files_label.grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+
+files_entry = tk.Entry(root, textvariable=file_list, width=50)
+files_entry.grid(row=1, column=1, padx=5, pady=5)
+
+files_button = tk.Button(root, text="Browse", command=select_files)
+files_button.grid(row=1, column=2, padx=5, pady=5)
+
+scribble_check = tk.Checkbutton(root, text="Ignore Scribble files", variable=scribble_var, command=update_ignore_files_pattern)
+scribble_check.grid(row=2, column=0, padx=5, pady=5, sticky=tk.W)
+
+gmlive_check = tk.Checkbutton(root, text="Ignore GMlive files", variable=gmlive_var, command=update_ignore_files_pattern)
+gmlive_check.grid(row=2, column=1, padx=5, pady=5, sticky=tk.W)
+
+fmod_check = tk.Checkbutton(root, text="Ignore FMOD files", variable=fmod_var, command=update_ignore_files_pattern)
+fmod_check.grid(row=2, column=2, padx=5, pady=5, sticky=tk.W)
+
+# Поля для исключений
+do_not_delete_label = tk.Label(root, text="Do not delete:")
+do_not_delete_label.grid(row=3, column=0, sticky=tk.W, padx=5, pady=5)
+
+do_not_delete_text = tk.Entry(root, width=50)
+do_not_delete_text.grid(row=3, column=1, padx=5, pady=5)
+
+do_not_edit_label = tk.Label(root, text="Do not edit:")
+do_not_edit_label.grid(row=4, column=0, sticky=tk.W, padx=5, pady=5)
+
+do_not_edit_text = tk.Entry(root, width=50)
+do_not_edit_text.grid(row=4, column=1, padx=5, pady=5)
+
+lint_button = tk.Button(root, text="Start Linting", command=start_linting)
+lint_button.grid(row=5, column=1, padx=5, pady=15)
+
+log_text = tk.Text(root, height=20, width=80)
+log_text.grid(row=6, column=0, columnspan=3, padx=5, pady=5)
+
+# Загрузка настроек при запуске
+load_settings()
+
+# Обработчик закрытия окна
+def on_closing():
+    # Сначала сохраняем настройки
+    save_settings()
+    # Завершаем основное окно и все связанные с ним потоки
+    root.quit()
+    root.destroy()
+
+root.protocol("WM_DELETE_WINDOW", on_closing)
+
+# Запуск основного цикла
 root.mainloop()
