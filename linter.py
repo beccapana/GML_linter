@@ -41,10 +41,13 @@ def remove_specific_comments(code):
     return '\n'.join(filtered_lines)
 
 def reduce_empty_lines(code):
-    empty_lines_pattern = re.compile(r'\n\s*\n+')
-    code = empty_lines_pattern.sub('\n\n', code)
-    if code.endswith('\n'):
-        code = code.rstrip('\n')
+    # Удаляем пустые строки в начале и в конце
+    code = re.sub(r'^\s*\n+', '', code)  # Удаляем пустые строки в начале
+    code = re.sub(r'\n+\s*$', '', code)  # Удаляем пустые строки в конце
+    
+    # Заменяем несколько последовательных пустых строк на одну пустую строку в середине
+    code = re.sub(r'\n\s*\n+', '\n\n', code)
+    
     return code
 
 def lint_gml_code(code):
