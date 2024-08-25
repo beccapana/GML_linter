@@ -1,7 +1,6 @@
 import os
 import json
 import re
-import shutil
 import tkinter as tk
 from tkinter import filedialog, messagebox
 from concurrent.futures import ThreadPoolExecutor
@@ -109,7 +108,7 @@ def normalize_paths(paths):
 def should_ignore_file(file):
     return ignore_files_pattern.search(file)
 
-def process_files_in_directory(directory, log_file, log_queue, do_not_delete_paths, do_not_edit_paths):
+def process_files_in_directory(directory, log_queue, do_not_delete_paths, do_not_edit_paths):
     start_time = time.time()
     
     processed_files = []
@@ -134,18 +133,13 @@ def process_files_in_directory(directory, log_file, log_queue, do_not_delete_pat
     elapsed_time = end_time - start_time
     log_queue.put(f"Linting process completed in {elapsed_time:.2f} seconds")
 
-    with open(log_file, 'w', encoding='utf-8') as log:
-        log.write("Processed files:\n")
-        for file_path in processed_files:
-            log.write(f"{file_path}\n")
-    
     if potential_unwanted_files:
         show_potential_unwanted_files_alert(potential_unwanted_files)
 
     # Обновляем настройки после обработки файлов
     save_settings()
 
-def process_individual_files(files, log_file, log_queue, do_not_delete_paths, do_not_edit_paths):
+def process_individual_files(files, log_queue, do_not_delete_paths, do_not_edit_paths):
     start_time = time.time()
     
     processed_files = []
@@ -167,11 +161,6 @@ def process_individual_files(files, log_file, log_queue, do_not_delete_paths, do
     elapsed_time = end_time - start_time
     log_queue.put(f"Linting process completed in {elapsed_time:.2f} seconds")
 
-    with open(log_file, 'w', encoding='utf-8') as log:
-        log.write("Processed files:\n")
-        for file_path in processed_files:
-            log.write(f"{file_path}\n")
-    
     if potential_unwanted_files:
         show_potential_unwanted_files_alert(potential_unwanted_files)
 
@@ -201,23 +190,22 @@ def show_potential_unwanted_files_alert(files):
 
 def start_linting():
     path = path_entry.get().strip()
-    log_file = log_entry.get().strip()
     
     do_not_delete_paths = normalize_paths(do_not_delete_text.get("1.0", tk.END).split('\n'))
     do_not_edit_paths = normalize_paths(do_not_edit_text.get("1.0", tk.END).split('\n'))
     
     if path:
         log_queue = queue.Queue()
-        threading.Thread(target=process_path, args=(path, log_file, log_queue, do_not_delete_paths, do_not_edit_paths)).start()
+        threading.Thread(target=process_path, args=(path, log_queue, do_not_delete_paths, do_not_edit_paths)).start()
         threading.Thread(target=update_log_text, args=(log_queue,)).start()
     else:
         messagebox.showwarning("Warning", "Please select a path.")
 
-def process_path(path, log_file, log_queue, do_not_delete_paths, do_not_edit_paths):
+def process_path(path, log_queue, do_not_delete_paths, do_not_edit_paths):
     if os.path.isfile(path):
-        process_individual_files([path], log_file, log_queue, do_not_delete_paths, do_not_edit_paths)
+        process_individual_files([path], log_queue, do_not_delete_paths, do_not_edit_paths)
     elif os.path.isdir(path):
-        process_files_in_directory(path, log_file, log_queue, do_not_delete_paths, do_not_edit_paths)
+        process_files_in_directory(path, log_queue, do_not_delete_paths, do_not_edit_paths)
     else:
         messagebox.showwarning("Warning", "Invalid path. Please select a valid file or directory.")
 
@@ -233,7 +221,6 @@ def update_log_text(log_queue):
 def save_settings():
     settings = {
         'path': path_entry.get().strip(),
-        'log_file': log_entry.get().strip(),
         'do_not_delete_paths': [line.strip() for line in do_not_delete_text.get("1.0", tk.END).split('\n') if line.strip()],
         'do_not_edit_paths': [line.strip() for line in do_not_edit_text.get("1.0", tk.END).split('\n') if line.strip()],
         'scribble': scribble_var.get(),
@@ -251,8 +238,6 @@ def load_settings():
             settings = json.load(f)
             path_entry.delete(0, tk.END)
             path_entry.insert(0, settings.get('path', ''))
-            log_entry.delete(0, tk.END)
-            log_entry.insert(0, settings.get('log_file', ''))
             do_not_delete_text.delete("1.0", tk.END)
             do_not_delete_text.insert("1.0", '\n'.join(settings.get('do_not_delete_paths', [])))
             do_not_edit_text.delete("1.0", tk.END)
@@ -279,12 +264,6 @@ browse_button.pack()
 
 select_folder_button = tk.Button(root, text="Select Folder", command=select_folder)
 select_folder_button.pack()
-
-log_label = tk.Label(root, text="Log file name:")
-log_label.pack()
-
-log_entry = tk.Entry(root, width=50)
-log_entry.pack()
 
 log_text = tk.Text(root, wrap=tk.WORD, width=80, height=20)
 log_text.pack()
