@@ -61,7 +61,6 @@ def is_potentially_unwanted_file(code):
     return True
 
 def process_file(file_path, log_queue, do_not_delete_paths, do_not_edit_paths):
-    log_queue.put(f'Processing file: {file_path}')
     
     # Проверка исключений для удаления
     if any(os.path.normpath(file_path).startswith(os.path.normpath(path)) for path in do_not_delete_paths):
