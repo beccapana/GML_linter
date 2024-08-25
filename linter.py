@@ -173,169 +173,144 @@ def process_individual_files(files, log_file, log_queue, do_not_delete_paths, do
     if potential_unwanted_files:
         show_potential_unwanted_files_alert(potential_unwanted_files)
 
-def show_potential_unwanted_files_alert(potential_unwanted_files):
-    alert_window = tk.Toplevel(root)
-    alert_window.title("Potentially Unwanted Files")
-
-    label = tk.Label(alert_window, text="The following files contain only comments and might be unwanted:")
-    label.pack(pady=5)
-
-    listbox = tk.Listbox(alert_window, height=15, width=80)
-    for file_path in potential_unwanted_files:
-        listbox.insert(tk.END, file_path)
-    listbox.pack(pady=5)
-
-    scrollbar = tk.Scrollbar(alert_window)
-    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-    listbox.config(yscrollcommand=scrollbar.set)
-    scrollbar.config(command=listbox.yview)
-
-    def on_double_click(event):
-        selected_file = listbox.get(listbox.curselection())
-        open_file(selected_file)
-
-    listbox.bind("<Double-1>", on_double_click)
-
-    ok_button = tk.Button(alert_window, text="OK", command=alert_window.destroy)
-    ok_button.pack(pady=5)
-
-def open_file(file_path):
-    if os.path.exists(file_path):
-        os.startfile(file_path)
+def browse_files():
+    files = filedialog.askopenfilenames(filetypes=[("GML Files", "*.gml")])
+    if files:
+        files = list(files)  # Convert tuple to list
+        path_entry.delete(0, tk.END)
+        path_entry.insert(0, ';'.join(files))
 
 def select_folder():
-    folder_selected = filedialog.askdirectory()
-    if folder_selected:
-        folder_path.set(folder_selected)
+    global folder_path
+    folder_path = filedialog.askdirectory()
+    if folder_path:
+        path_entry.delete(0, tk.END)
+        path_entry.insert(0, folder_path)
+        save_settings()  # Save folder path when a new one is selected
 
-def select_files():
-    files_selected = filedialog.askopenfilenames(filetypes=[("GML files", "*.gml")])
-    if files_selected:
-        file_list.set(','.join(files_selected))
+def show_potential_unwanted_files_alert(files):
+    message = "The following files are potentially unwanted:\n\n"
+    for file_path in files:
+        message += f"{file_path}\n"
+    messagebox.showwarning("Potentially Unwanted Files", message)
 
 def start_linting():
-    selected_files = file_list.get().split(',') if file_list.get() else None
-    directory = folder_path.get() if folder_path.get() else None
+    path = path_entry.get().strip()
+    log_file = log_entry.get().strip()
     
-    if not directory and not selected_files:
-        messagebox.showerror("Error", "Please select a folder or files.")
-        return
-
-    log_file = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text files", "*.txt")])
-    if not log_file:
-        return
-
-    log_queue = queue.Queue()
+    do_not_delete_paths = normalize_paths(do_not_delete_text.get("1.0", tk.END).split('\n'))
+    do_not_edit_paths = normalize_paths(do_not_edit_text.get("1.0", tk.END).split('\n'))
     
-    do_not_delete_paths = normalize_paths(do_not_delete_text.get().strip().split(','))
-    do_not_edit_paths = normalize_paths(do_not_edit_text.get().strip().split(','))
-
-    def logging_thread():
-        while True:
-            message = log_queue.get()
-            if message is None:
-                break
-            log_text.insert(tk.END, message + "\n")
-            log_text.see(tk.END)
-
-    threading.Thread(target=logging_thread, daemon=True).start()
-
-    if directory:
-        threading.Thread(target=process_files_in_directory, args=(directory, log_file, log_queue, do_not_delete_paths, do_not_edit_paths), daemon=True).start()
+    if path:
+        log_queue = queue.Queue()
+        threading.Thread(target=process_path, args=(path, log_file, log_queue, do_not_delete_paths, do_not_edit_paths)).start()
+        threading.Thread(target=update_log_text, args=(log_queue,)).start()
     else:
-        threading.Thread(target=process_individual_files, args=(selected_files, log_file, log_queue, do_not_delete_paths, do_not_edit_paths), daemon=True).start()
+        messagebox.showwarning("Warning", "Please select a path.")
+
+def process_path(path, log_file, log_queue, do_not_delete_paths, do_not_edit_paths):
+    if os.path.isfile(path):
+        process_individual_files([path], log_file, log_queue, do_not_delete_paths, do_not_edit_paths)
+    elif os.path.isdir(path):
+        process_files_in_directory(path, log_file, log_queue, do_not_delete_paths, do_not_edit_paths)
+    else:
+        messagebox.showwarning("Warning", "Invalid path. Please select a valid file or directory.")
+
+def update_log_text(log_queue):
+    while True:
+        try:
+            log_message = log_queue.get_nowait()
+            log_text.insert(tk.END, log_message + '\n')
+            log_text.see(tk.END)
+        except queue.Empty:
+            time.sleep(0.1)
 
 def save_settings():
     settings = {
-        "do_not_delete": do_not_delete_text.get().strip(),
-        "do_not_edit": do_not_edit_text.get().strip()
+        'path': path_entry.get().strip(),
+        'log_file': log_entry.get().strip(),
+        'do_not_delete_paths': [line.strip() for line in do_not_delete_text.get("1.0", tk.END).split('\n') if line.strip()],
+        'do_not_edit_paths': [line.strip() for line in do_not_edit_text.get("1.0", tk.END).split('\n') if line.strip()],
+        'scribble': scribble_var.get(),
+        'gmlive': gmlive_var.get(),
+        'fmod': fmod_var.get(),
+        'folder_path': folder_path  # Добавляем путь папки в настройки
     }
     with open('settings.json', 'w', encoding='utf-8') as f:
         json.dump(settings, f, ensure_ascii=False, indent=4)
 
 def load_settings():
+    global folder_path
     try:
         with open('settings.json', 'r', encoding='utf-8') as f:
             settings = json.load(f)
-            do_not_delete_text.insert(tk.END, settings.get("do_not_delete", ""))
-            do_not_edit_text.insert(tk.END, settings.get("do_not_edit", ""))
+            path_entry.delete(0, tk.END)
+            path_entry.insert(0, settings.get('path', ''))
+            log_entry.delete(0, tk.END)
+            log_entry.insert(0, settings.get('log_file', ''))
+            do_not_delete_text.delete("1.0", tk.END)
+            do_not_delete_text.insert("1.0", '\n'.join(settings.get('do_not_delete_paths', [])))
+            do_not_edit_text.delete("1.0", tk.END)
+            do_not_edit_text.insert("1.0", '\n'.join(settings.get('do_not_edit_paths', [])))
+            scribble_var.set(settings.get('scribble', 0))
+            gmlive_var.set(settings.get('gmlive', 0))
+            fmod_var.set(settings.get('fmod', 0))
+            folder_path = settings.get('folder_path', '')  # Загружаем путь папки из настроек
     except FileNotFoundError:
         pass
 
-def normalize_paths(paths):
-    return [os.path.normpath(path.strip()) for path in paths]
 
-# Основное окно
 root = tk.Tk()
 root.title("GML Linter")
 
-# Переменные
-folder_path = tk.StringVar()
-file_list = tk.StringVar()
+# Создание элементов интерфейса
+path_label = tk.Label(root, text="Select file or folder:")
+path_label.pack()
 
-scribble_var = tk.BooleanVar(value=True)
-gmlive_var = tk.BooleanVar(value=True)
-fmod_var = tk.BooleanVar(value=True)
+path_entry = tk.Entry(root, width=50)
+path_entry.pack()
 
-# UI элементы
-folder_label = tk.Label(root, text="Select folder:")
-folder_label.grid(row=0, column=0, sticky=tk.W, padx=5, pady=5)
+browse_button = tk.Button(root, text="Browse Files", command=browse_files)
+browse_button.pack()
 
-folder_entry = tk.Entry(root, textvariable=folder_path, width=50)
-folder_entry.grid(row=0, column=1, padx=5, pady=5)
+select_folder_button = tk.Button(root, text="Select Folder", command=select_folder)
+select_folder_button.pack()
 
-folder_button = tk.Button(root, text="Browse", command=select_folder)
-folder_button.grid(row=0, column=2, padx=5, pady=5)
+log_label = tk.Label(root, text="Log file name:")
+log_label.pack()
 
-files_label = tk.Label(root, text="Or select files:")
-files_label.grid(row=1, column=0, sticky=tk.W, padx=5, pady=5)
+log_entry = tk.Entry(root, width=50)
+log_entry.pack()
 
-files_entry = tk.Entry(root, textvariable=file_list, width=50)
-files_entry.grid(row=1, column=1, padx=5, pady=5)
+log_text = tk.Text(root, wrap=tk.WORD, width=80, height=20)
+log_text.pack()
 
-files_button = tk.Button(root, text="Browse", command=select_files)
-files_button.grid(row=1, column=2, padx=5, pady=5)
+do_not_delete_label = tk.Label(root, text="Do not delete paths:")
+do_not_delete_label.pack()
 
-scribble_check = tk.Checkbutton(root, text="Ignore Scribble files", variable=scribble_var, command=update_ignore_files_pattern)
-scribble_check.grid(row=2, column=0, padx=5, pady=5, sticky=tk.W)
+do_not_delete_text = tk.Text(root, wrap=tk.WORD, width=50, height=5)
+do_not_delete_text.pack()
 
-gmlive_check = tk.Checkbutton(root, text="Ignore GMlive files", variable=gmlive_var, command=update_ignore_files_pattern)
-gmlive_check.grid(row=2, column=1, padx=5, pady=5, sticky=tk.W)
+do_not_edit_label = tk.Label(root, text="Do not edit paths:")
+do_not_edit_label.pack()
 
-fmod_check = tk.Checkbutton(root, text="Ignore FMOD files", variable=fmod_var, command=update_ignore_files_pattern)
-fmod_check.grid(row=2, column=2, padx=5, pady=5, sticky=tk.W)
+do_not_edit_text = tk.Text(root, wrap=tk.WORD, width=50, height=5)
+do_not_edit_text.pack()
 
-# Поля для исключений
-do_not_delete_label = tk.Label(root, text="Do not delete:")
-do_not_delete_label.grid(row=3, column=0, sticky=tk.W, padx=5, pady=5)
+scribble_var = tk.IntVar()
+scribble_checkbox = tk.Checkbutton(root, text="Ignore scribble files", variable=scribble_var, command=update_ignore_files_pattern)
+scribble_checkbox.pack()
 
-do_not_delete_text = tk.Entry(root, width=50)
-do_not_delete_text.grid(row=3, column=1, padx=5, pady=5)
+gmlive_var = tk.IntVar()
+gmlive_checkbox = tk.Checkbutton(root, text="Ignore GMLive files", variable=gmlive_var, command=update_ignore_files_pattern)
+gmlive_checkbox.pack()
 
-do_not_edit_label = tk.Label(root, text="Do not edit:")
-do_not_edit_label.grid(row=4, column=0, sticky=tk.W, padx=5, pady=5)
-
-do_not_edit_text = tk.Entry(root, width=50)
-do_not_edit_text.grid(row=4, column=1, padx=5, pady=5)
+fmod_var = tk.IntVar()
+fmod_checkbox = tk.Checkbutton(root, text="Ignore FMOD files", variable=fmod_var, command=update_ignore_files_pattern)
+fmod_checkbox.pack()
 
 lint_button = tk.Button(root, text="Start Linting", command=start_linting)
-lint_button.grid(row=5, column=1, padx=5, pady=15)
+lint_button.pack()
 
-log_text = tk.Text(root, height=20, width=80)
-log_text.grid(row=6, column=0, columnspan=3, padx=5, pady=5)
-
-# Загрузка настроек при запуске
 load_settings()
-
-# Обработчик закрытия окна
-def on_closing():
-    # Сначала сохраняем настройки
-    save_settings()
-    # Завершаем основное окно и все связанные с ним потоки
-    root.quit()
-    root.destroy()
-
-root.protocol("WM_DELETE_WINDOW", on_closing)
-
-# Запуск основного цикла
 root.mainloop()
