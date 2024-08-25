@@ -61,7 +61,6 @@ def is_potentially_unwanted_file(code):
     return True
 
 def process_file(file_path, log_queue, do_not_delete_paths, do_not_edit_paths):
-    
     # Проверка исключений для удаления
     if any(os.path.normpath(file_path).startswith(os.path.normpath(path)) for path in do_not_delete_paths):
         log_queue.put(f'Skipped deletion (Do not delete): {file_path}')
@@ -143,6 +142,9 @@ def process_files_in_directory(directory, log_file, log_queue, do_not_delete_pat
     if potential_unwanted_files:
         show_potential_unwanted_files_alert(potential_unwanted_files)
 
+    # Обновляем настройки после обработки файлов
+    save_settings()
+
 def process_individual_files(files, log_file, log_queue, do_not_delete_paths, do_not_edit_paths):
     start_time = time.time()
     
@@ -172,6 +174,9 @@ def process_individual_files(files, log_file, log_queue, do_not_delete_paths, do
     
     if potential_unwanted_files:
         show_potential_unwanted_files_alert(potential_unwanted_files)
+
+    # Обновляем настройки после обработки файлов
+    save_settings()
 
 def browse_files():
     files = filedialog.askopenfilenames(filetypes=[("GML Files", "*.gml")])
@@ -258,7 +263,6 @@ def load_settings():
             folder_path = settings.get('folder_path', '')  # Загружаем путь папки из настроек
     except FileNotFoundError:
         pass
-
 
 root = tk.Tk()
 root.title("GML Linter")
