@@ -57,10 +57,16 @@ def lint_gml_code(code):
 
 def is_potentially_unwanted_file(code):
     lines = code.split('\n')
+    only_comments_and_event = True  # Проверяем, содержит ли файл только комментарии, пустые строки и `event_inherited();`
+
     for line in lines:
-        if line.strip() and not line.strip().startswith('//'):
-            return False
-    return True
+        stripped_line = line.strip()
+        if stripped_line and not stripped_line.startswith('//'):
+            if stripped_line != 'event_inherited();':
+                only_comments_and_event = False
+                break
+
+    return only_comments_and_event
 
 def process_file(file_path, log_queue, do_not_delete_paths, do_not_edit_paths):
     # Проверка исключений для удаления
@@ -99,7 +105,7 @@ def process_file(file_path, log_queue, do_not_delete_paths, do_not_edit_paths):
             except IOError as e:
                 log_queue.put(f'Error writing to file {file_path}: {e}')
         
-        # Добавляем в потенциально нежелательные файлы только если они содержат только комментарии
+        # Добавляем в потенциально нежелательные файлы только если они содержат только комментарии, пустые строки или 'event_inherited();'
         if is_potentially_unwanted_file(linted_code):
             return [file_path]
         return []
@@ -138,7 +144,7 @@ def process_files_in_directory(directory, log_queue, do_not_delete_paths, do_not
 
     # Выводим потенциально нежелательные файлы в лог в самом конце
     if potential_unwanted_files:
-        log_queue.put("==========\nUNWANTED FILES:\n")
+        log_queue.put("==========\n POTENTIALLY UNWANTED FILES:\n")
         for file_path in potential_unwanted_files:
             log_queue.put(file_path)
 
@@ -229,7 +235,7 @@ def save_settings():
         'scribble': scribble_var.get(),
         'gmlive': gmlive_var.get(),
         'fmod': fmod_var.get(),
-        'folder_path': folder_path  # Добавляем путь папки в настройки
+        'folder_path': folder_path  
     }
     with open('settings.json', 'w', encoding='utf-8') as f:
         json.dump(settings, f, ensure_ascii=False, indent=4)
