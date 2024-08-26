@@ -136,8 +136,11 @@ def process_files_in_directory(directory, log_queue, do_not_delete_paths, do_not
     elapsed_time = end_time - start_time
     log_queue.put(f"Linting process completed in {elapsed_time:.2f} seconds")
 
+    # Выводим потенциально нежелательные файлы в лог в самом конце
     if potential_unwanted_files:
-        show_potential_unwanted_files_alert(potential_unwanted_files)
+        log_queue.put("==========\nUNWANTED FILES:\n")
+        for file_path in potential_unwanted_files:
+            log_queue.put(file_path)
 
     # Обновляем настройки после обработки файлов
     save_settings()
@@ -164,8 +167,11 @@ def process_individual_files(files, log_queue, do_not_delete_paths, do_not_edit_
     elapsed_time = end_time - start_time
     log_queue.put(f"Linting process completed in {elapsed_time:.2f} seconds")
 
+    # Выводим потенциально нежелательные файлы в лог в самом конце
     if potential_unwanted_files:
-        show_potential_unwanted_files_alert(potential_unwanted_files)
+        log_queue.put("==========\nUNWANTED FILES:\n")
+        for file_path in potential_unwanted_files:
+            log_queue.put(file_path)
 
     # Обновляем настройки после обработки файлов
     save_settings()
@@ -184,12 +190,6 @@ def select_folder():
         path_entry.delete(0, tk.END)
         path_entry.insert(0, folder_path)
         save_settings()  # Save folder path when a new one is selected
-
-def show_potential_unwanted_files_alert(files):
-    message = "The following files are potentially unwanted:\n\n"
-    for file_path in files:
-        message += f"{file_path}\n"
-    messagebox.showwarning("Potentially Unwanted Files", message)
 
 def start_linting():
     path = path_entry.get().strip()
